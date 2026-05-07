@@ -10,6 +10,9 @@ DerivedData/
 
 # xcodegen artifacts (project.yml is the source of truth — we regenerate)
 LittleExplorer.xcodeproj/
+LittleExplorer/Resources/Info.plist
+LittleExplorerLiveActivity/Info.plist
+LittleExplorerWatch/Resources/Info.plist
 
 # Swift Package Manager
 .build/

@@ -32,7 +32,7 @@ actor APIClient {
 
     // MARK: - Activities
 
-    func activities(user: AppUser) async throws -> [Activity] {
+    func activities(user: AppUser) async throws -> [RideRecord] {
         try await get("/api/activities", query: ["user": user.rawValue])
     }
 

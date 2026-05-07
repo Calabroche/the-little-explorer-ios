@@ -2,7 +2,7 @@ import MapKit
 import SwiftUI
 
 struct ActivityDetailView: View {
-    let activity: Activity
+    let activity: RideRecord
 
     var body: some View {
         ScrollView {

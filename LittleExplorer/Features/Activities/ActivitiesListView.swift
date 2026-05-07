@@ -47,7 +47,7 @@ struct ActivitiesListView: View {
                         ActivityRow(activity: activity)
                     }
                 }
-                .navigationDestination(for: Activity.self) { activity in
+                .navigationDestination(for: RideRecord.self) { activity in
                     ActivityDetailView(activity: activity)
                 }
             }
@@ -66,7 +66,7 @@ struct ActivitiesListView: View {
 }
 
 private struct ActivityRow: View {
-    let activity: Activity
+    let activity: RideRecord
 
     var body: some View {
         HStack(spacing: 12) {

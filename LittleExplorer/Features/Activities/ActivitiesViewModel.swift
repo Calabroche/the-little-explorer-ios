@@ -11,7 +11,7 @@ final class ActivitiesViewModel {
         case failed(String)
     }
 
-    private(set) var activities: [Activity] = []
+    private(set) var activities: [RideRecord] = []
     private(set) var state: LoadState = .idle
 
     private let api: APIClient

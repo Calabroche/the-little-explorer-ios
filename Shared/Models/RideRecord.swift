@@ -1,6 +1,6 @@
 import Foundation
 
-struct Activity: Codable, Identifiable, Hashable {
+struct RideRecord: Codable, Identifiable, Hashable {
     let id: String
     let type: String
     let originalType: String?
@@ -69,7 +69,7 @@ struct Weather: Codable, Hashable {
     }
 }
 
-extension Activity {
+extension RideRecord {
     /// Sport icon (SF Symbol).
     var sportSymbol: String {
         switch type.lowercased() {
