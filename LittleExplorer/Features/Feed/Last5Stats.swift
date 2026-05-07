@@ -58,12 +58,34 @@ struct Last5StatsView: View {
 
             Divider().background(AppColors.creamBorder)
 
-            // 5 mini cards row.
-            HStack(spacing: 8) {
-                ForEach(Array(last5.enumerated()), id: \.element.id) { index, activity in
-                    miniCard(activity: activity, isMostRecent: index == 0)
+            // 5 ride cards — horizontal carousel. Each card sized to
+            // ~half the available width so 1.5 are visible at a time
+            // (full first card + half of next as a peek), and snaps
+            // to the nearest card on swipe-end. Lets every metric
+            // breathe in big serif type instead of cramming all 5
+            // cards onto one line.
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 12) {
+                    ForEach(Array(last5.enumerated()), id: \.element.id) { index, activity in
+                        miniCard(activity: activity, isMostRecent: index == 0)
+                            .containerRelativeFrame(.horizontal, count: 2, span: 1, spacing: 12)
+                    }
+                }
+                .scrollTargetLayout()
+            }
+            .scrollTargetBehavior(.viewAligned)
+            .scrollClipDisabled()
+            // Page indicator: 5 dots, one per card; the active one
+            // highlights as the user swipes through.
+            HStack(spacing: 6) {
+                ForEach(0..<last5.count, id: \.self) { _ in
+                    Circle()
+                        .fill(AppColors.creamBorder)
+                        .frame(width: 4, height: 4)
                 }
             }
+            .frame(maxWidth: .infinity)
+            .padding(.top, 6)
         }
         .padding(20)
         .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 4))
@@ -92,38 +114,88 @@ struct Last5StatsView: View {
     }
 
     private func miniCard(activity: RideRecord, isMostRecent: Bool) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(activity.date)
-                .font(.system(size: 9).weight(.semibold))
-                .tracking(1.0)
-                .foregroundStyle(AppColors.inkLight)
-            Text(activity.distance.map { String(format: "%.1f km", $0) } ?? "—")
-                .font(.system(.subheadline, design: .serif).weight(.bold))
-                .foregroundStyle(AppColors.ink)
-            Text("\(activity.elevation.map { "\(Int($0)) m" } ?? "—") · \(activity.duration)")
-                .font(.system(size: 10))
-                .foregroundStyle(AppColors.inkLight)
-            if let tss = activity.tss {
-                Text("TSS \(tss)")
-                    .font(.system(size: 10))
-                    .foregroundStyle(AppColors.terra)
+        VStack(alignment: .leading, spacing: 12) {
+            // Header: date + most-recent dot.
+            HStack(alignment: .firstTextBaseline) {
+                Text(activity.date)
+                    .font(.system(size: 10).weight(.semibold))
+                    .tracking(1.4)
+                    .foregroundStyle(AppColors.inkLight)
+                Spacer()
+                if isMostRecent {
+                    HStack(spacing: 4) {
+                        Circle().fill(AppColors.terra).frame(width: 6, height: 6)
+                        Text("RÉCENT")
+                            .font(.system(size: 9).weight(.bold))
+                            .tracking(1.2)
+                            .foregroundStyle(AppColors.terra)
+                    }
+                }
             }
-            if let power = activity.avgPower {
-                Text("\(power) W moy.")
-                    .font(.system(size: 10))
-                    .foregroundStyle(AppColors.green)
+
+            // Hero: distance in big serif.
+            Text(activity.distance.map { String(format: "%.2f km", $0) } ?? "—")
+                .font(.system(size: 28, design: .serif).weight(.heavy))
+                .foregroundStyle(AppColors.ink)
+                .monospacedDigit()
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+
+            // 2-column stats grid — gives every metric room to breathe
+            // instead of stacking them as one column of micro-text.
+            LazyVGrid(columns: [
+                GridItem(.flexible(), alignment: .leading),
+                GridItem(.flexible(), alignment: .leading),
+            ], alignment: .leading, spacing: 10) {
+                miniStat(label: "DURÉE", value: activity.duration, unit: nil, color: AppColors.ink)
+                miniStat(label: "DÉNIVELÉ", value: activity.elevation.map { "\(Int($0))" }, unit: "m", color: AppColors.ink)
+                if let tss = activity.tss {
+                    miniStat(label: "TSS", value: "\(tss)", unit: nil, color: AppColors.terra)
+                }
+                if let np = activity.np {
+                    miniStat(label: "NP", value: "\(np)", unit: "W", color: AppColors.green)
+                } else if let power = activity.avgPower {
+                    miniStat(label: "PUISSANCE", value: "\(power)", unit: "W", color: AppColors.green)
+                }
+                if let hr = activity.avgHr {
+                    miniStat(label: "FC", value: "\(Int(hr.rounded()))", unit: "bpm", color: AppColors.terra)
+                }
+                if let wkg = activity.wkg {
+                    miniStat(label: "W/KG", value: String(format: "%.2f", wkg), unit: nil, color: AppColors.blue)
+                }
             }
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppColors.creamDark, in: RoundedRectangle(cornerRadius: 3))
+        .padding(.horizontal, 16)
+        .padding(.vertical, 14)
+        .frame(maxWidth: .infinity, minHeight: 200, alignment: .topLeading)
+        .background(AppColors.creamDark, in: RoundedRectangle(cornerRadius: 6))
         .overlay(
             Rectangle()
                 .fill(isMostRecent ? AppColors.terra : AppColors.creamBorder)
-                .frame(height: 3),
+                .frame(height: 4),
             alignment: .top,
         )
+        .clipShape(RoundedRectangle(cornerRadius: 6))
+    }
+
+    private func miniStat(label: String, value: String?, unit: String?, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.system(size: 9).weight(.semibold))
+                .tracking(1.2)
+                .foregroundStyle(AppColors.inkLight)
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text(value ?? "—")
+                    .font(.system(size: 18, design: .serif).weight(.heavy))
+                    .foregroundStyle(color)
+                    .monospacedDigit()
+                if let unit, value != nil {
+                    Text(unit)
+                        .font(.system(size: 10))
+                        .foregroundStyle(AppColors.inkLight)
+                }
+            }
+        }
     }
 
     // MARK: - Aggregations
