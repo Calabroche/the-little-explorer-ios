@@ -80,21 +80,40 @@ struct ActivityCalendarView: View {
             return f
         }()
 
+        // Month label row uses absolute positioning so each label
+        // can render its full name (e.g. "févr") without being
+        // clipped to a single cellSize-wide box. Labels overlap into
+        // the next column's space — that's fine because the row sits
+        // above the heatmap and there's nothing to collide with.
+        let columnAdvance = Self.cellSize + Self.cellGap
+        let labelRowOriginX = labelW + Self.cellGap
+
         return VStack(alignment: .leading, spacing: Self.cellGap) {
-            // Month row.
-            HStack(spacing: Self.cellGap) {
-                Color.clear.frame(width: labelW)
+            ZStack(alignment: .topLeading) {
+                // Invisible spacer to size the ZStack to match the
+                // grid's full width.
+                HStack(spacing: Self.cellGap) {
+                    Color.clear.frame(width: labelW, height: 14)
+                    ForEach(0..<cols.count, id: \.self) { _ in
+                        Color.clear.frame(width: Self.cellSize, height: 14)
+                    }
+                }
                 ForEach(0..<cols.count, id: \.self) { i in
                     let m = monthAt[i]
                     let prev = i > 0 ? monthAt[i - 1] : -1
-                    let label = (m != prev && cols[i].first != nil)
-                        ? formatter.string(from: cols[i].first!.date).replacingOccurrences(of: ".", with: "")
-                        : ""
-                    Text(label)
-                        .font(.system(size: 9))
-                        .foregroundStyle(AppColors.inkLight)
-                        .frame(width: Self.cellSize, alignment: .leading)
-                        .lineLimit(1)
+                    if m != prev, let first = cols[i].first {
+                        let raw = formatter.string(from: first.date)
+                            .replacingOccurrences(of: ".", with: "")
+                        // Cap at 3 letters minimum if the formatter
+                        // returned something longer (some locales
+                        // return e.g. "septembre" for short month).
+                        let label = raw.count > 4 ? String(raw.prefix(3)) : raw
+                        Text(label.capitalized)
+                            .font(.system(size: 9).weight(.semibold))
+                            .foregroundStyle(AppColors.inkLight)
+                            .fixedSize(horizontal: true, vertical: false)
+                            .offset(x: labelRowOriginX + CGFloat(i) * columnAdvance)
+                    }
                 }
             }
 
