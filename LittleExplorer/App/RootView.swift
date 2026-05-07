@@ -5,8 +5,8 @@ struct RootView: View {
 
     var body: some View {
         TabView {
-            ActivitiesListView()
-                .tabItem { Label("Activities", systemImage: "list.bullet") }
+            FeedView()
+                .tabItem { Label("Activités", systemImage: "list.bullet") }
 
             RideTrackerView()
                 .tabItem { Label("Track", systemImage: "record.circle") }
@@ -15,7 +15,7 @@ struct RootView: View {
                 .tabItem { Label("Plan", systemImage: "map") }
 
             ProfileView()
-                .tabItem { Label("Profile", systemImage: "person.crop.circle") }
+                .tabItem { Label("Profil", systemImage: "person.crop.circle") }
         }
     }
 }

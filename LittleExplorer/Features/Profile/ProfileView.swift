@@ -4,34 +4,70 @@ struct ProfileView: View {
     @Environment(AppEnvironment.self) private var environment
 
     var body: some View {
+        @Bindable var env = environment
         NavigationStack {
             Form {
-                Section("Rider") {
-                    Picker("User", selection: bindingForUser()) {
-                        ForEach(AppUser.allCases) { user in
-                            Text(user.displayName).tag(user)
+                Section("Profil") {
+                    Picker("Utilisateur", selection: $env.currentUser) {
+                        ForEach(AppUser.allCases) { Text($0.displayName).tag($0) }
+                    }
+                }
+
+                Section("Sport") {
+                    Picker("Sport principal", selection: $env.selectedSport) {
+                        ForEach(Sport.allCases) { sport in
+                            Label(sport.displayName, systemImage: sport.symbol).tag(sport)
                         }
                     }
                 }
+
+                Section("Apparence") {
+                    Picker("Thème", selection: themeBinding(env: env)) {
+                        Text("Système").tag(ThemeOption.system)
+                        Text("Clair").tag(ThemeOption.light)
+                        Text("Sombre").tag(ThemeOption.dark)
+                    }
+                    .pickerStyle(.segmented)
+                }
+
                 Section("Backend") {
                     LabeledContent("API", value: "the-little-explorer-app.vercel.app")
                 }
+
                 Section("Apple Watch") {
-                    LabeledContent("Paired", value: environment.watch.isPaired ? "Yes" : "No")
-                    LabeledContent("Reachable", value: environment.watch.isReachable ? "Yes" : "No")
+                    LabeledContent("Appairée", value: env.watch.isPaired ? "Oui" : "Non")
+                    LabeledContent("Joignable", value: env.watch.isReachable ? "Oui" : "Non")
                 }
-                Section("About") {
+
+                Section("À propos") {
                     LabeledContent("Version", value: appVersion)
                 }
             }
-            .navigationTitle("Profile")
+            .navigationTitle("Profil")
         }
     }
 
-    private func bindingForUser() -> Binding<AppUser> {
+    private enum ThemeOption: String, CaseIterable, Hashable {
+        case system, light, dark
+    }
+
+    private func themeBinding(env: AppEnvironment) -> Binding<ThemeOption> {
         Binding(
-            get: { environment.currentUser },
-            set: { environment.currentUser = $0 },
+            get: {
+                switch env.darkModeOverride {
+                case .none:    return .system
+                case .some(.light): return .light
+                case .some(.dark):  return .dark
+                @unknown default: return .system
+                }
+            },
+            set: { newValue in
+                switch newValue {
+                case .system: env.darkModeOverride = nil
+                case .light:  env.darkModeOverride = .light
+                case .dark:   env.darkModeOverride = .dark
+                }
+            },
         )
     }
 

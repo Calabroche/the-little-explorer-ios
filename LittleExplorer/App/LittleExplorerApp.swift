@@ -8,6 +8,8 @@ struct LittleExplorerApp: App {
         WindowGroup {
             RootView()
                 .environment(environment)
+                .preferredColorScheme(environment.darkModeOverride)
+                .tint(AppColors.terra)
         }
     }
 }

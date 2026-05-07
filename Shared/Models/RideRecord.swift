@@ -37,9 +37,10 @@ struct RideRecord: Codable, Identifiable, Hashable {
     let vam: Double?
     let ftp: Int?
     let weather: Weather?
+    let bestEfforts: BestEfforts?
 
     enum CodingKeys: String, CodingKey {
-        case id, type, title, date, location, duration, distance, speed, elevation, descent, gps, altitude, heartrate, calories, np, tss, vi, wkg, ef, trimp, vam, ftp, weather
+        case id, type, title, date, location, duration, distance, speed, elevation, descent, gps, altitude, heartrate, calories, np, tss, vi, wkg, ef, trimp, vam, ftp, weather, bestEfforts
         case originalType = "original_type"
         case rawDate
         case durationMin = "duration_min"
@@ -62,6 +63,19 @@ struct Weather: Codable, Hashable {
     let humidity: Int?
     let code: Int?
     let description: String?
+}
+
+/// Best power output (in watts) over fixed durations — pulled from
+/// the activity's power stream server-side. Used by FTP curve and
+/// PersonalRecords. All durations are optional because short rides
+/// won't have entries for the longer windows.
+struct BestEfforts: Codable, Hashable {
+    let s60: Int?
+    let s300: Int?
+    let s600: Int?
+    let s1200: Int?
+    let s1800: Int?
+    let s3600: Int?
 }
 
 extension RideRecord {
