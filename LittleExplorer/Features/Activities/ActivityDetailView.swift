@@ -20,14 +20,24 @@ import SwiftUI
 struct ActivityDetailView: View {
     let activity: RideRecord
 
+    @State private var selectedDist: Double?
+
     private var chartData: [ChartPoint] { PowerStream.build(from: activity) }
     private var hasHeartRate: Bool { (activity.heartrate?.count ?? 0) > 10 }
     private var hasPower: Bool { chartData.contains(where: { $0.power > 0 }) }
     private var hasGPS: Bool { activity.gps.count > 1 }
+    private var maxDistKm: Double { chartData.last?.distKm ?? activity.distance ?? 1 }
+
+    /// Closest sample to the user's drag-selected X position (used by
+    /// every chart's RuleMark + popup annotation).
+    private var selectedPoint: ChartPoint? {
+        guard let selectedDist, !chartData.isEmpty else { return nil }
+        return chartData.min(by: { abs($0.distKm - selectedDist) < abs($1.distKm - selectedDist) })
+    }
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 14) {
                 header
                 topStatsCard
                 if activity.np != nil { ftpCard }
@@ -45,8 +55,10 @@ struct ActivityDetailView: View {
                 effortMetricsCard
                 Spacer(minLength: 24)
             }
-            .padding(16)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 16)
         }
+        .scrollIndicators(.hidden)
         .background(AppColors.cream)
         .navigationTitle("")
         .toolbar {
@@ -202,8 +214,26 @@ struct ActivityDetailView: View {
                         .interpolationMethod(.catmullRom)
                     }
                 }
+                if let s = selectedPoint {
+                    RuleMark(x: .value("km", s.distKm))
+                        .foregroundStyle(AppColors.ink.opacity(0.4))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                    if let hr = s.heartRate {
+                        PointMark(x: .value("km", s.distKm), y: .value("FC", hr))
+                            .foregroundStyle(AppColors.terra)
+                            .symbolSize(80)
+                            .annotation(position: .top, spacing: 4, overflowResolution: .init(x: .fit, y: .disabled)) {
+                                tooltipBox(km: s.distKm, lines: [
+                                    ("FC", "\(Int(hr.rounded())) bpm", AppColors.terra),
+                                    ("Pente", String(format: "%+.1f %%", s.gradientPct), AppColors.inkMid),
+                                ])
+                            }
+                    }
+                }
             }
             .frame(height: 220)
+            .chartXScale(domain: 0...maxDistKm)
+            .chartXSelection(value: $selectedDist)
             .chartXAxis { AxisMarks { _ in AxisValueLabel().font(.system(size: 9)) } }
             .chartYAxis {
                 AxisMarks(position: .leading) { _ in
@@ -242,8 +272,23 @@ struct ActivityDetailView: View {
                         .interpolationMethod(.catmullRom)
                     }
                 }
+                if let s = selectedPoint, let speed = s.speedKmh {
+                    RuleMark(x: .value("km", s.distKm))
+                        .foregroundStyle(AppColors.ink.opacity(0.4))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                    PointMark(x: .value("km", s.distKm), y: .value("vitesse", speed))
+                        .foregroundStyle(AppColors.blue)
+                        .symbolSize(80)
+                        .annotation(position: .top, spacing: 4, overflowResolution: .init(x: .fit, y: .disabled)) {
+                            tooltipBox(km: s.distKm, lines: [
+                                ("Vitesse", String(format: "%.1f km/h", speed), AppColors.blue),
+                            ])
+                        }
+                }
             }
             .frame(height: 200)
+            .chartXScale(domain: 0...maxDistKm)
+            .chartXSelection(value: $selectedDist)
             .chartXAxis { AxisMarks { _ in AxisValueLabel().font(.system(size: 9)) } }
             .chartYAxis {
                 AxisMarks(position: .leading) { _ in
@@ -275,8 +320,24 @@ struct ActivityDetailView: View {
                     .foregroundStyle(AppColors.green)
                     .interpolationMethod(.catmullRom)
                 }
+                if let s = selectedPoint {
+                    RuleMark(x: .value("km", s.distKm))
+                        .foregroundStyle(AppColors.ink.opacity(0.4))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                    PointMark(x: .value("km", s.distKm), y: .value("W", s.power))
+                        .foregroundStyle(AppColors.green)
+                        .symbolSize(80)
+                        .annotation(position: .top, spacing: 4, overflowResolution: .init(x: .fit, y: .disabled)) {
+                            tooltipBox(km: s.distKm, lines: [
+                                ("Puissance", "\(s.power) W", AppColors.green),
+                                ("Pente", String(format: "%+.1f %%", s.gradientPct), AppColors.inkMid),
+                            ])
+                        }
+                }
             }
             .frame(height: 200)
+            .chartXScale(domain: 0...maxDistKm)
+            .chartXSelection(value: $selectedDist)
             .chartXAxis { AxisMarks { _ in AxisValueLabel().font(.system(size: 9)) } }
             .chartYAxis {
                 AxisMarks(position: .leading) { _ in
@@ -284,7 +345,7 @@ struct ActivityDetailView: View {
                     AxisGridLine().foregroundStyle(AppColors.creamBorder)
                 }
             }
-            Text("Puissance estimée par modèle physique (gravité + roulement + aéro). Pas mesurée.")
+            Text("Glisse ton doigt → détail des forces (gravité, roulement, aéro) à chaque km.")
                 .font(.system(size: 11))
                 .foregroundStyle(AppColors.inkLight)
                 .lineSpacing(2)
@@ -314,8 +375,23 @@ struct ActivityDetailView: View {
                         .interpolationMethod(.catmullRom)
                     }
                 }
+                if let s = selectedPoint, let alt = s.altitude {
+                    RuleMark(x: .value("km", s.distKm))
+                        .foregroundStyle(AppColors.ink.opacity(0.4))
+                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                    PointMark(x: .value("km", s.distKm), y: .value("alt", alt))
+                        .foregroundStyle(AppColors.terra)
+                        .symbolSize(80)
+                        .annotation(position: .top, spacing: 4, overflowResolution: .init(x: .fit, y: .disabled)) {
+                            tooltipBox(km: s.distKm, lines: [
+                                ("Altitude", "\(Int(alt.rounded())) m", AppColors.terra),
+                            ])
+                        }
+                }
             }
             .frame(height: 180)
+            .chartXScale(domain: 0...maxDistKm)
+            .chartXSelection(value: $selectedDist)
             .chartXAxis { AxisMarks { _ in AxisValueLabel().font(.system(size: 9)) } }
             .chartYAxis {
                 AxisMarks(position: .leading) { _ in
@@ -324,6 +400,31 @@ struct ActivityDetailView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Tooltip box (shared by all 4 charts)
+
+    private func tooltipBox(km: Double, lines: [(String, String, Color)]) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(String(format: "%.2f km", km))
+                .font(.system(size: 10).weight(.semibold))
+                .tracking(0.4)
+                .foregroundStyle(AppColors.inkLight)
+            ForEach(lines.indices, id: \.self) { i in
+                HStack(spacing: 4) {
+                    Text(lines[i].0).foregroundStyle(AppColors.inkMid)
+                    Text(":")
+                    Text(lines[i].1).foregroundStyle(lines[i].2).bold()
+                }
+                .font(.system(size: 11))
+                .monospacedDigit()
+            }
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 4))
+        .overlay(RoundedRectangle(cornerRadius: 4).stroke(AppColors.creamBorder, lineWidth: 1))
+        .shadow(color: .black.opacity(0.18), radius: 8, y: 2)
     }
 
     // MARK: - HR Zones

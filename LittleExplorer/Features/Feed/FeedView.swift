@@ -17,10 +17,7 @@ struct FeedView: View {
                         BrandLockup()
                     }
                     ToolbarItem(placement: .topBarTrailing) {
-                        Picker("User", selection: $env.currentUser) {
-                            ForEach(AppUser.allCases) { Text($0.displayName).tag($0) }
-                        }
-                        .pickerStyle(.menu)
+                        UserMenu(currentUser: $env.currentUser)
                     }
                 }
                 .toolbarTitleDisplayMode(.inline)
@@ -64,6 +61,38 @@ struct BrandLockup: View {
             Text("Explorer")
                 .font(.system(size: compact ? 14 : 16, design: .serif).weight(.heavy).italic())
                 .foregroundStyle(AppColors.terra)
+        }
+    }
+}
+
+/// Compact user switcher for the trailing toolbar slot.
+/// Uses Menu with a small label (icon + initial) instead of a full
+/// Picker — Picker.pickerStyle(.menu) renders as a wide capsule that
+/// crowds the brand lockup on the leading side.
+struct UserMenu: View {
+    @Binding var currentUser: AppUser
+
+    var body: some View {
+        Menu {
+            ForEach(AppUser.allCases) { user in
+                Button {
+                    currentUser = user
+                } label: {
+                    if user == currentUser {
+                        Label(user.displayName, systemImage: "checkmark")
+                    } else {
+                        Text(user.displayName)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "person.crop.circle")
+                    .font(.system(size: 16))
+                Text(String(currentUser.displayName.prefix(1)))
+                    .font(.system(size: 11).weight(.bold))
+            }
+            .foregroundStyle(AppColors.terra)
         }
     }
 }

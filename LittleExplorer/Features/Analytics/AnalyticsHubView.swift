@@ -49,10 +49,7 @@ struct AnalyticsHubView: View {
             }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Picker("User", selection: $env.currentUser) {
-                        ForEach(AppUser.allCases) { Text($0.displayName).tag($0) }
-                    }
-                    .pickerStyle(.menu)
+                    UserMenu(currentUser: $env.currentUser)
                 }
             }
             .task { await env.activityStore.load(user: env.currentUser) }
