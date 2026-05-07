@@ -65,12 +65,24 @@ struct BrandLockup: View {
 /// the left and a user pill on the right. Replaces the navigation
 /// toolbar slots so the iOS 26 toolbar pill chrome doesn't truncate
 /// either piece.
+///
+/// The brand wordmark is tappable: it routes the user back to the
+/// Activités tab and scrolls that tab to the very top, no matter
+/// where they tapped from.
 struct BrandHeader: View {
     @Binding var currentUser: AppUser
+    @Environment(AppRouter.self) private var router
 
     var body: some View {
         HStack(alignment: .center) {
-            BrandLockup()
+            Button {
+                router.goHome()
+            } label: {
+                BrandLockup()
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Retour aux activités")
+
             Spacer(minLength: 12)
             UserPill(currentUser: $currentUser)
         }
@@ -120,48 +132,64 @@ struct UserPill: View {
 
 private struct FeedScrollView: View {
     @Bindable var env: AppEnvironment
+    @Environment(AppRouter.self) private var router
+
+    private static let scrollAnchorID = "feed-top"
 
     var body: some View {
         let allActivities = env.activityStore.activities
         let filtered = env.activityStore.filtered(by: env.selectedSport)
         let availableSports = allActivities.availableSports
 
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                if availableSports.count > 1 {
-                    SportPicker(sport: $env.selectedSport, available: availableSports)
+        ScrollViewReader { proxy in
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    // Invisible anchor at the very top — the brand-tap
+                    // action scrolls back to this id.
+                    Color.clear
+                        .frame(height: 1)
+                        .id(Self.scrollAnchorID)
+
+                    if availableSports.count > 1 {
+                        SportPicker(sport: $env.selectedSport, available: availableSports)
+                            .padding(.horizontal, 16)
+                    }
+
+                    headline(activities: filtered)
                         .padding(.horizontal, 16)
-                }
 
-                headline(activities: filtered)
-                    .padding(.horizontal, 16)
+                    if env.selectedSport == .cycling {
+                        TrainingProgramView(activities: filtered).padding(.horizontal, 16)
+                    }
+                    ActivityCalendarView(activities: filtered).padding(.horizontal, 16)
+                    PersonalRecordsView(activities: filtered, sport: env.selectedSport).padding(.horizontal, 16)
+                    if env.selectedSport == .running {
+                        RunPaceZonesView(activities: filtered).padding(.horizontal, 16)
+                    }
+                    Last5StatsView(activities: filtered).padding(.horizontal, 16)
 
-                if env.selectedSport == .cycling {
-                    TrainingProgramView(activities: filtered).padding(.horizontal, 16)
-                }
-                ActivityCalendarView(activities: filtered).padding(.horizontal, 16)
-                PersonalRecordsView(activities: filtered, sport: env.selectedSport).padding(.horizontal, 16)
-                if env.selectedSport == .running {
-                    RunPaceZonesView(activities: filtered).padding(.horizontal, 16)
-                }
-                Last5StatsView(activities: filtered).padding(.horizontal, 16)
+                    Divider().padding(.horizontal, 16)
 
-                Divider().padding(.horizontal, 16)
-
-                LazyVStack(spacing: 14) {
-                    ForEach(filtered) { activity in
-                        NavigationLink(value: activity) {
-                            ActivityCard(activity: activity)
-                                .padding(.horizontal, 16)
+                    LazyVStack(spacing: 14) {
+                        ForEach(filtered) { activity in
+                            NavigationLink(value: activity) {
+                                ActivityCard(activity: activity)
+                                    .padding(.horizontal, 16)
+                            }
+                            .buttonStyle(.plain)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
+                .padding(.vertical, 16)
             }
-            .padding(.vertical, 16)
-        }
-        .navigationDestination(for: RideRecord.self) { record in
-            ActivityDetailView(activity: record)
+            .navigationDestination(for: RideRecord.self) { record in
+                ActivityDetailView(activity: record)
+            }
+            .onChange(of: router.feedScrollTrigger) { _, _ in
+                withAnimation(.easeInOut(duration: 0.45)) {
+                    proxy.scrollTo(Self.scrollAnchorID, anchor: .top)
+                }
+            }
         }
     }
 
