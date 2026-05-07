@@ -32,7 +32,7 @@ fi
 xcodegen generate
 
 echo "▶︎ Locating booted simulator…"
-SIM_ID=$("$DEVELOPER_DIR/usr/bin/xcrun" simctl list devices booted \
+SIM_ID=$(/usr/bin/xcrun simctl list devices booted \
     | grep -E "iPhone|iPad" \
     | head -n 1 \
     | sed -E 's/.*\(([0-9A-F-]+)\).*/\1/')
@@ -64,11 +64,11 @@ if [ ! -d "$APP" ]; then
 fi
 
 echo "▶︎ Reinstalling on simulator…"
-"$DEVELOPER_DIR/usr/bin/xcrun" simctl uninstall "$SIM_ID" "$BUNDLE_ID" 2>/dev/null || true
-"$DEVELOPER_DIR/usr/bin/xcrun" simctl install   "$SIM_ID" "$APP"
+/usr/bin/xcrun simctl uninstall "$SIM_ID" "$BUNDLE_ID" 2>/dev/null || true
+/usr/bin/xcrun simctl install   "$SIM_ID" "$APP"
 
 echo "▶︎ Launching…"
-"$DEVELOPER_DIR/usr/bin/xcrun" simctl launch    "$SIM_ID" "$BUNDLE_ID" >/dev/null
+/usr/bin/xcrun simctl launch    "$SIM_ID" "$BUNDLE_ID" >/dev/null
 
 # Bring Simulator to the foreground so you can see the result.
 open -a Simulator
