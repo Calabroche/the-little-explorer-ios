@@ -19,8 +19,17 @@ jobs:
       - name: Install xcodegen
         run: brew install xcodegen
 
-      - name: Download watchOS Simulator runtime
-        run: xcodebuild -downloadPlatform watchOS
+      - name: List available runtimes
+        run: xcrun simctl list runtimes
+
+      - name: Download watchOS Simulator runtime if missing
+        run: |
+          if ! xcrun simctl list runtimes | grep -q watchOS; then
+            echo "watchOS runtime not present, downloading..."
+            xcodebuild -downloadPlatform watchOS
+          else
+            echo "watchOS runtime already installed"
+          fi
 
       - name: Generate Xcode project
         run: xcodegen generate
