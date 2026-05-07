@@ -13,7 +13,7 @@ struct ActivityCalendarView: View {
     private static let cellGap: CGFloat = 3
     private static let labelW: CGFloat = 14
     private static let minCell: CGFloat = 8
-    private static let maxCell: CGFloat = 32
+    private static let maxCell: CGFloat = 24
 
     private struct DayCell: Identifiable, Hashable {
         let id: Int
