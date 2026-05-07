@@ -10,10 +10,9 @@ struct ActivityCalendarView: View {
     @State private var hoverIndex: Int?
 
     private static let weeksShown = 12
-    private static let cellGap: CGFloat = 3
+    private static let cellSize: CGFloat = 14
     private static let labelW: CGFloat = 14
-    private static let minCell: CGFloat = 8
-    private static let maxCell: CGFloat = 20
+    private static let minGap: CGFloat = 3
 
     private struct DayCell: Identifiable, Hashable {
         let id: Int
@@ -33,11 +32,10 @@ struct ActivityCalendarView: View {
         VStack(alignment: .leading, spacing: 8) {
             header
             GeometryReader { geo in
-                let cellSize = computeCellSize(for: geo.size.width)
-                grid(cols: cols, cellSize: cellSize)
+                let gap = computeGap(for: geo.size.width)
+                grid(cols: cols, gap: gap)
             }
-            .frame(height: gridHeight(for: 0))
-            .onAppear {} // force re-layout on rotation / size class changes
+            .frame(height: gridHeight())
             if let idx = hoverIndex, idx < cells.count {
                 tooltip(for: cells[idx])
             }
@@ -76,22 +74,24 @@ struct ActivityCalendarView: View {
 
     // MARK: - Grid
 
-    private func computeCellSize(for availableWidth: CGFloat) -> CGFloat {
+    /// Compute the gap between cells so the heatmap fills the
+    /// available width. Cells stay at the original 14pt; the
+    /// horizontal whitespace between them grows / shrinks to absorb
+    /// the difference.
+    private func computeGap(for availableWidth: CGFloat) -> CGFloat {
         let weeks = CGFloat(Self.weeksShown)
-        let totalGapWidth = (weeks - 1) * Self.cellGap + Self.cellGap // include gap after the day-label column too
-        let usable = max(0, availableWidth - Self.labelW - totalGapWidth)
+        // total width = labelW + gap + weeks*cellSize + (weeks-1)*gap
+        //             = labelW + weeks*cellSize + weeks*gap
+        let usable = max(0, availableWidth - Self.labelW - weeks * Self.cellSize)
         let raw = usable / weeks
-        return max(Self.minCell, min(Self.maxCell, floor(raw)))
+        return max(Self.minGap, raw)
     }
 
-    /// Approximate height the grid needs (used to size the
-    /// GeometryReader before its proxy resolves the final width).
-    private func gridHeight(for cellSize: CGFloat) -> CGFloat {
-        let s = cellSize > 0 ? cellSize : Self.maxCell
-        return s * 7 + Self.cellGap * 6 + 18 // 7 rows + 6 gaps + month label row
+    private func gridHeight() -> CGFloat {
+        Self.cellSize * 7 + Self.minGap * 6 + 18
     }
 
-    private func grid(cols: [[DayCell]], cellSize: CGFloat) -> some View {
+    private func grid(cols: [[DayCell]], gap: CGFloat) -> some View {
         let dayShort = ["L", "M", "M", "J", "V", "S", "D"]
 
         // Month labels: only show when month changes between consecutive weeks.
@@ -106,9 +106,9 @@ struct ActivityCalendarView: View {
             return f
         }()
 
-        return VStack(alignment: .leading, spacing: Self.cellGap) {
+        return VStack(alignment: .leading, spacing: gap) {
             // Month row.
-            HStack(spacing: Self.cellGap) {
+            HStack(spacing: gap) {
                 Color.clear.frame(width: Self.labelW)
                 ForEach(0..<cols.count, id: \.self) { i in
                     let m = monthAt[i]
@@ -119,7 +119,7 @@ struct ActivityCalendarView: View {
                     Text(label)
                         .font(.system(size: 9))
                         .foregroundStyle(AppColors.inkLight)
-                        .frame(width: cellSize, alignment: .leading)
+                        .frame(width: Self.cellSize, alignment: .leading)
                         .lineLimit(1)
                         .fixedSize(horizontal: true, vertical: false)
                 }
@@ -127,14 +127,14 @@ struct ActivityCalendarView: View {
 
             // 7 rows of cells.
             ForEach(0..<7, id: \.self) { row in
-                HStack(spacing: Self.cellGap) {
+                HStack(spacing: gap) {
                     Text(row % 2 == 0 ? dayShort[row] : "")
                         .font(.system(size: 9))
                         .foregroundStyle(AppColors.inkLight)
-                        .frame(width: Self.labelW, height: cellSize)
+                        .frame(width: Self.labelW, height: Self.cellSize)
                     ForEach(0..<cols.count, id: \.self) { w in
                         let cell = cols[w][row]
-                        cellView(for: cell, size: cellSize)
+                        cellView(for: cell, size: Self.cellSize)
                     }
                 }
             }
