@@ -8,8 +8,8 @@ on:
 
 jobs:
   build:
-    name: Build (iOS Simulator)
-    runs-on: macos-14
+    name: Build (iOS + watchOS Simulators)
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
@@ -19,6 +19,9 @@ jobs:
       - name: Install xcodegen
         run: brew install xcodegen
 
+      - name: Download watchOS Simulator runtime
+        run: xcodebuild -downloadPlatform watchOS
+
       - name: Generate Xcode project
         run: xcodegen generate
 
@@ -27,15 +30,7 @@ jobs:
           set -o pipefail && xcodebuild \
             -project LittleExplorer.xcodeproj \
             -scheme LittleExplorer \
-            -destination 'platform=iOS Simulator,name=iPhone 15' \
-            -configuration Debug \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            build | xcbeautify || xcodebuild \
-            -project LittleExplorer.xcodeproj \
-            -scheme LittleExplorer \
-            -destination 'platform=iOS Simulator,name=iPhone 15' \
+            -destination 'generic/platform=iOS Simulator' \
             -configuration Debug \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
@@ -47,15 +42,7 @@ jobs:
           set -o pipefail && xcodebuild \
             -project LittleExplorer.xcodeproj \
             -scheme LittleExplorerWatch \
-            -destination 'platform=watchOS Simulator,name=Apple Watch Series 9 (45mm)' \
-            -configuration Debug \
-            CODE_SIGNING_ALLOWED=NO \
-            CODE_SIGNING_REQUIRED=NO \
-            CODE_SIGN_IDENTITY="" \
-            build || xcodebuild \
-            -project LittleExplorer.xcodeproj \
-            -scheme LittleExplorerWatch \
-            -destination 'platform=watchOS Simulator,name=Apple Watch Series 9 (45mm)' \
+            -destination 'generic/platform=watchOS Simulator' \
             -configuration Debug \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
