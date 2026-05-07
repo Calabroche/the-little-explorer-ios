@@ -10,33 +10,37 @@ struct AnalyticsHubView: View {
     var body: some View {
         @Bindable var env = environment
         NavigationStack {
-            List {
-                Section("Données") {
-                    NavigationLink(value: AnalyticsRoute.stats) {
-                        row(symbol: "chart.bar.fill", title: "Statistiques", subtitle: "Distance & dénivelé par sport, mois", color: AppColors.terra)
+            VStack(spacing: 0) {
+                BrandHeader(currentUser: $env.currentUser)
+                List {
+                    Section("Données") {
+                        NavigationLink(value: AnalyticsRoute.stats) {
+                            row(symbol: "chart.bar.fill", title: "Statistiques", subtitle: "Distance & dénivelé par sport, mois", color: AppColors.terra)
+                        }
+                        NavigationLink(value: AnalyticsRoute.map) {
+                            row(symbol: "map.fill", title: "Carte des parcours", subtitle: "Toutes les sorties superposées", color: AppColors.green)
+                        }
+                        NavigationLink(value: AnalyticsRoute.photos) {
+                            row(symbol: "photo.on.rectangle.angled", title: "Galerie photos", subtitle: "Vos souvenirs de sortie", color: AppColors.blue)
+                        }
                     }
-                    NavigationLink(value: AnalyticsRoute.map) {
-                        row(symbol: "map.fill", title: "Carte des parcours", subtitle: "Toutes les sorties superposées", color: AppColors.green)
+                    Section("Cyclisme") {
+                        NavigationLink(value: AnalyticsRoute.ftp) {
+                            row(symbol: "bolt.fill", title: "FTP", subtitle: "Power-duration & évolution", color: AppColors.terra)
+                        }
+                        NavigationLink(value: AnalyticsRoute.compare) {
+                            row(symbol: "arrow.left.arrow.right.square", title: "Comparer", subtitle: "Deux sorties, métrique par métrique", color: AppColors.blue)
+                        }
                     }
-                    NavigationLink(value: AnalyticsRoute.photos) {
-                        row(symbol: "photo.on.rectangle.angled", title: "Galerie photos", subtitle: "Vos souvenirs de sortie", color: AppColors.blue)
-                    }
-                }
-                Section("Cyclisme") {
-                    NavigationLink(value: AnalyticsRoute.ftp) {
-                        row(symbol: "bolt.fill", title: "FTP", subtitle: "Power-duration & évolution", color: AppColors.terra)
-                    }
-                    NavigationLink(value: AnalyticsRoute.compare) {
-                        row(symbol: "arrow.left.arrow.right.square", title: "Comparer", subtitle: "Deux sorties, métrique par métrique", color: AppColors.blue)
-                    }
-                }
-                Section("Année") {
-                    NavigationLink(value: AnalyticsRoute.wrapped) {
-                        row(symbol: "sparkles", title: "Bilan annuel", subtitle: "Vos chiffres en 8 cartes", color: AppColors.green)
+                    Section("Année") {
+                        NavigationLink(value: AnalyticsRoute.wrapped) {
+                            row(symbol: "sparkles", title: "Bilan annuel", subtitle: "Vos chiffres en 8 cartes", color: AppColors.green)
+                        }
                     }
                 }
             }
-            .navigationTitle("Analyses")
+            .background(AppColors.cream)
+            .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: AnalyticsRoute.self) { route in
                 switch route {
                 case .stats:    StatsView()
@@ -45,11 +49,6 @@ struct AnalyticsHubView: View {
                 case .ftp:      FtpView()
                 case .compare:  CompareView()
                 case .wrapped:  WrappedView()
-                }
-            }
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    UserMenu(currentUser: $env.currentUser)
                 }
             }
             .task { await env.activityStore.load(user: env.currentUser) }

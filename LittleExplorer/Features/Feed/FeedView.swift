@@ -10,22 +10,17 @@ struct FeedView: View {
     var body: some View {
         @Bindable var env = environment
         NavigationStack {
-            content(env: env)
-                .background(AppColors.cream)
-                .toolbar {
-                    ToolbarItem(placement: .topBarLeading) {
-                        BrandLockup()
-                    }
-                    ToolbarItem(placement: .topBarTrailing) {
-                        UserMenu(currentUser: $env.currentUser)
-                    }
-                }
-                .toolbarTitleDisplayMode(.inline)
-                .task { await env.activityStore.load(user: env.currentUser) }
-                .refreshable { await env.activityStore.load(user: env.currentUser, force: true) }
-                .onChange(of: env.currentUser) { _, newUser in
-                    Task { await env.activityStore.load(user: newUser) }
-                }
+            VStack(spacing: 0) {
+                BrandHeader(currentUser: $env.currentUser)
+                content(env: env)
+            }
+            .background(AppColors.cream)
+            .toolbar(.hidden, for: .navigationBar)
+            .task { await env.activityStore.load(user: env.currentUser) }
+            .refreshable { await env.activityStore.load(user: env.currentUser, force: true) }
+            .onChange(of: env.currentUser) { _, newUser in
+                Task { await env.activityStore.load(user: newUser) }
+            }
         }
     }
 
@@ -62,14 +57,32 @@ struct BrandLockup: View {
                 .font(.system(size: compact ? 14 : 16, design: .serif).weight(.heavy).italic())
                 .foregroundStyle(AppColors.terra)
         }
+        .fixedSize(horizontal: true, vertical: true)
     }
 }
 
-/// Compact user switcher for the trailing toolbar slot.
-/// Uses Menu with a small label (icon + initial) instead of a full
-/// Picker — Picker.pickerStyle(.menu) renders as a wide capsule that
-/// crowds the brand lockup on the leading side.
-struct UserMenu: View {
+/// Top header shown on the welcome screens — full brand wordmark on
+/// the left and a user pill on the right. Replaces the navigation
+/// toolbar slots so the iOS 26 toolbar pill chrome doesn't truncate
+/// either piece.
+struct BrandHeader: View {
+    @Binding var currentUser: AppUser
+
+    var body: some View {
+        HStack(alignment: .center) {
+            BrandLockup()
+            Spacer(minLength: 12)
+            UserPill(currentUser: $currentUser)
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 4)
+        .padding(.bottom, 10)
+    }
+}
+
+/// Full-width-as-needed user picker pill. Shows the SF Symbol icon +
+/// the full display name (so users see "Florian" / "Helena" plain).
+struct UserPill: View {
     @Binding var currentUser: AppUser
 
     var body: some View {
@@ -86,13 +99,21 @@ struct UserMenu: View {
                 }
             }
         } label: {
-            HStack(spacing: 4) {
-                Image(systemName: "person.crop.circle")
-                    .font(.system(size: 16))
-                Text(String(currentUser.displayName.prefix(1)))
-                    .font(.system(size: 11).weight(.bold))
+            HStack(spacing: 8) {
+                Image(systemName: "person.crop.circle.fill")
+                    .font(.system(size: 18))
+                    .foregroundStyle(AppColors.terra)
+                Text(currentUser.displayName)
+                    .font(.system(size: 13, design: .serif).weight(.bold))
+                    .foregroundStyle(AppColors.ink)
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9).weight(.bold))
+                    .foregroundStyle(AppColors.inkLight)
             }
-            .foregroundStyle(AppColors.terra)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(AppColors.surface, in: Capsule())
+            .overlay(Capsule().stroke(AppColors.creamBorder, lineWidth: 1))
         }
     }
 }
