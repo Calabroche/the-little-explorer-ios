@@ -181,26 +181,40 @@ struct ActivityDetailView: View {
         .clipShape(RoundedRectangle(cornerRadius: 4))
     }
 
-    // MARK: - HR + Slope chart
+    // MARK: - HR + Slope chart (dual axis)
+    //
+    // Y axis is shared between two unrelated series (HR bpm + slope %).
+    // Swift Charts only supports one Y scale natively, so we map slope
+    // values into HR coordinate space (-25% → hrMin, +25% → hrMax,
+    // 0% → midpoint) and re-label the trailing axis with the original
+    // slope percentages. Same trick web's Recharts does with `yAxisId`.
+
+    private static let hrMin: Double = 120
+    private static let hrMax: Double = 200
+    private static let slopeMin: Double = -25
+    private static let slopeMax: Double = 25
+    private static let slopeBaselineHr: Double = (hrMin + hrMax) / 2
+
+    private static func slopeToHr(_ slope: Double) -> Double {
+        let t = (slope - slopeMin) / (slopeMax - slopeMin)
+        return hrMin + t * (hrMax - hrMin)
+    }
 
     private var hrSlopeChart: some View {
         cardWrapper(label: "FRÉQUENCE CARDIAQUE · INCLINAISON") {
             Chart {
                 ForEach(chartData) { p in
-                    if p.gradientPct > 0 {
+                    if p.gradientPct != 0 {
+                        let mappedY = Self.slopeToHr(p.gradientPct)
                         BarMark(
                             x: .value("km", p.distKm),
-                            y: .value("pente", p.gradientPct),
+                            yStart: .value("base", Self.slopeBaselineHr),
+                            yEnd: .value("slope", mappedY),
                             width: .fixed(2),
                         )
-                        .foregroundStyle(AppColors.terra.opacity(0.65))
-                    } else if p.gradientPct < 0 {
-                        BarMark(
-                            x: .value("km", p.distKm),
-                            y: .value("pente", p.gradientPct),
-                            width: .fixed(2),
-                        )
-                        .foregroundStyle(AppColors.blue.opacity(0.65))
+                        .foregroundStyle(p.gradientPct > 0
+                            ? AppColors.terra.opacity(0.6)
+                            : AppColors.blue.opacity(0.6))
                     }
                 }
                 ForEach(chartData) { p in
@@ -211,40 +225,62 @@ struct ActivityDetailView: View {
                             series: .value("series", "hr"),
                         )
                         .foregroundStyle(AppColors.terra)
+                        .lineStyle(StrokeStyle(lineWidth: 2))
                         .interpolationMethod(.catmullRom)
                     }
                 }
                 if let s = selectedPoint {
                     RuleMark(x: .value("km", s.distKm))
-                        .foregroundStyle(AppColors.ink.opacity(0.4))
+                        .foregroundStyle(AppColors.ink.opacity(0.5))
                         .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
                     if let hr = s.heartRate {
                         PointMark(x: .value("km", s.distKm), y: .value("FC", hr))
                             .foregroundStyle(AppColors.terra)
-                            .symbolSize(80)
+                            .symbolSize(90)
                             .annotation(position: .top, spacing: 4, overflowResolution: .init(x: .fit, y: .disabled)) {
                                 tooltipBox(km: s.distKm, lines: [
-                                    ("FC", "\(Int(hr.rounded())) bpm", AppColors.terra),
-                                    ("Pente", String(format: "%+.1f %%", s.gradientPct), AppColors.inkMid),
+                                    ("Montée (%)", String(format: "%.1f", max(s.gradientPct, 0)), AppColors.terra),
+                                    ("Descente (%)", String(format: "%.1f", min(s.gradientPct, 0)), AppColors.blue),
+                                    ("FC (bpm)", "\(Int(hr.rounded()))", AppColors.terra),
                                 ])
                             }
                     }
                 }
             }
-            .frame(height: 220)
+            .frame(height: 240)
             .chartXScale(domain: 0...maxDistKm)
+            .chartYScale(domain: Self.hrMin...Self.hrMax)
             .chartXSelection(value: $selectedDist)
-            .chartXAxis { AxisMarks { _ in AxisValueLabel().font(.system(size: 9)) } }
+            .chartXAxis {
+                AxisMarks { _ in AxisValueLabel().font(.system(size: 9)) }
+            }
             .chartYAxis {
-                AxisMarks(position: .leading) { _ in
-                    AxisValueLabel().font(.system(size: 9))
+                // Leading axis: HR values (bpm).
+                AxisMarks(position: .leading, values: [120, 140, 160, 180, 200]) { value in
+                    AxisValueLabel {
+                        if let v = value.as(Double.self) {
+                            Text("\(Int(v))").font(.system(size: 9))
+                        }
+                    }
                     AxisGridLine().foregroundStyle(AppColors.creamBorder)
+                }
+                // Trailing axis: re-labelled with slope %.
+                AxisMarks(position: .trailing, values: [120, 140, 160, 180, 200]) { value in
+                    AxisValueLabel {
+                        if let hr = value.as(Double.self) {
+                            // Inverse of slopeToHr.
+                            let t = (hr - Self.hrMin) / (Self.hrMax - Self.hrMin)
+                            let slope = Self.slopeMin + t * (Self.slopeMax - Self.slopeMin)
+                            let formatted = slope == 0 ? "0" : String(format: "%+.0f%%", slope)
+                            Text(formatted).font(.system(size: 9))
+                        }
+                    }
                 }
             }
             chartLegend(items: [
                 (AppColors.terra, "FC (bpm)"),
-                (AppColors.terra.opacity(0.65), "Montée"),
-                (AppColors.blue.opacity(0.65), "Descente"),
+                (AppColors.terra.opacity(0.6), "Montée"),
+                (AppColors.blue.opacity(0.6), "Descente"),
             ])
         }
     }
