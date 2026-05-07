@@ -1,18 +1,16 @@
 import SwiftUI
 
-/// 12-week TSS heatmap. Each cell is one day; intensity scales with
-/// the total TSS recorded that day. Cells size dynamically to fill
-/// the card's available width, so the chart never has dead whitespace
-/// on the right. Tap a cell to surface its summary line.
+/// 17-week (≈ 4 months) TSS heatmap. Each cell is one day; intensity
+/// scales with the total TSS recorded that day. Tap a cell to surface
+/// its summary line.
 struct ActivityCalendarView: View {
     let activities: [RideRecord]
 
     @State private var hoverIndex: Int?
 
-    private static let weeksShown = 12
+    private static let weeksShown = 17
     private static let cellSize: CGFloat = 14
-    private static let labelW: CGFloat = 14
-    private static let minGap: CGFloat = 3
+    private static let cellGap: CGFloat = 3
 
     private struct DayCell: Identifiable, Hashable {
         let id: Int
@@ -31,11 +29,7 @@ struct ActivityCalendarView: View {
 
         VStack(alignment: .leading, spacing: 8) {
             header
-            GeometryReader { geo in
-                let gap = computeGap(for: geo.size.width)
-                grid(cols: cols, gap: gap)
-            }
-            .frame(height: gridHeight())
+            grid(cols: cols)
             if let idx = hoverIndex, idx < cells.count {
                 tooltip(for: cells[idx])
             }
@@ -45,11 +39,9 @@ struct ActivityCalendarView: View {
         .overlay(RoundedRectangle(cornerRadius: 4).stroke(AppColors.creamBorder, lineWidth: 1))
     }
 
-    // MARK: - Header
-
     private var header: some View {
         HStack {
-            Text("12 DERNIÈRES SEMAINES")
+            Text("4 DERNIERS MOIS")
                 .font(.system(size: 9).weight(.semibold))
                 .tracking(1.2)
                 .foregroundStyle(AppColors.terra)
@@ -72,26 +64,8 @@ struct ActivityCalendarView: View {
         }
     }
 
-    // MARK: - Grid
-
-    /// Compute the gap between cells so the heatmap fills the
-    /// available width. Cells stay at the original 14pt; the
-    /// horizontal whitespace between them grows / shrinks to absorb
-    /// the difference.
-    private func computeGap(for availableWidth: CGFloat) -> CGFloat {
-        let weeks = CGFloat(Self.weeksShown)
-        // total width = labelW + gap + weeks*cellSize + (weeks-1)*gap
-        //             = labelW + weeks*cellSize + weeks*gap
-        let usable = max(0, availableWidth - Self.labelW - weeks * Self.cellSize)
-        let raw = usable / weeks
-        return max(Self.minGap, raw)
-    }
-
-    private func gridHeight() -> CGFloat {
-        Self.cellSize * 7 + Self.minGap * 6 + 18
-    }
-
-    private func grid(cols: [[DayCell]], gap: CGFloat) -> some View {
+    private func grid(cols: [[DayCell]]) -> some View {
+        let labelW: CGFloat = 14
         let dayShort = ["L", "M", "M", "J", "V", "S", "D"]
 
         // Month labels: only show when month changes between consecutive weeks.
@@ -106,10 +80,10 @@ struct ActivityCalendarView: View {
             return f
         }()
 
-        return VStack(alignment: .leading, spacing: gap) {
+        return VStack(alignment: .leading, spacing: Self.cellGap) {
             // Month row.
-            HStack(spacing: gap) {
-                Color.clear.frame(width: Self.labelW)
+            HStack(spacing: Self.cellGap) {
+                Color.clear.frame(width: labelW)
                 ForEach(0..<cols.count, id: \.self) { i in
                     let m = monthAt[i]
                     let prev = i > 0 ? monthAt[i - 1] : -1
@@ -121,33 +95,32 @@ struct ActivityCalendarView: View {
                         .foregroundStyle(AppColors.inkLight)
                         .frame(width: Self.cellSize, alignment: .leading)
                         .lineLimit(1)
-                        .fixedSize(horizontal: true, vertical: false)
                 }
             }
 
             // 7 rows of cells.
             ForEach(0..<7, id: \.self) { row in
-                HStack(spacing: gap) {
+                HStack(spacing: Self.cellGap) {
                     Text(row % 2 == 0 ? dayShort[row] : "")
                         .font(.system(size: 9))
                         .foregroundStyle(AppColors.inkLight)
-                        .frame(width: Self.labelW, height: Self.cellSize)
+                        .frame(width: labelW, height: Self.cellSize)
                     ForEach(0..<cols.count, id: \.self) { w in
                         let cell = cols[w][row]
-                        cellView(for: cell, size: Self.cellSize)
+                        cellView(for: cell)
                     }
                 }
             }
         }
     }
 
-    private func cellView(for cell: DayCell, size: CGFloat) -> some View {
+    private func cellView(for cell: DayCell) -> some View {
         let bg: Color = cell.inFuture
             ? Color.clear
             : intensityColor(tss: cell.totalTss, hasActivity: !cell.activities.isEmpty)
         return Rectangle()
             .fill(bg)
-            .frame(width: size, height: size)
+            .frame(width: Self.cellSize, height: Self.cellSize)
             .overlay(
                 Rectangle()
                     .stroke(cell.inFuture ? Color.clear : AppColors.creamBorder, lineWidth: 0.5),
@@ -155,8 +128,6 @@ struct ActivityCalendarView: View {
             .cornerRadius(2)
             .onTapGesture { hoverIndex = cell.id }
     }
-
-    // MARK: - Tooltip
 
     private func tooltip(for cell: DayCell) -> some View {
         let formatter: DateFormatter = {
