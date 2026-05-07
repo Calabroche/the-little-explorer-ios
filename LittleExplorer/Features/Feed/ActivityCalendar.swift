@@ -1,19 +1,19 @@
 import SwiftUI
 
-/// 26-week (≈ 6 months) TSS heatmap. Each cell is one day; intensity
-/// scales with the total TSS recorded that day. Cells size dynamically
-/// to fill the card's available width, so the chart never has dead
-/// whitespace on the right. Tap a cell to surface its summary line.
+/// 12-week TSS heatmap. Each cell is one day; intensity scales with
+/// the total TSS recorded that day. Cells size dynamically to fill
+/// the card's available width, so the chart never has dead whitespace
+/// on the right. Tap a cell to surface its summary line.
 struct ActivityCalendarView: View {
     let activities: [RideRecord]
 
     @State private var hoverIndex: Int?
 
-    private static let weeksShown = 26
-    private static let cellGap: CGFloat = 2
+    private static let weeksShown = 12
+    private static let cellGap: CGFloat = 3
     private static let labelW: CGFloat = 14
     private static let minCell: CGFloat = 8
-    private static let maxCell: CGFloat = 18
+    private static let maxCell: CGFloat = 32
 
     private struct DayCell: Identifiable, Hashable {
         let id: Int
@@ -51,7 +51,7 @@ struct ActivityCalendarView: View {
 
     private var header: some View {
         HStack {
-            Text("6 DERNIERS MOIS")
+            Text("12 DERNIÈRES SEMAINES")
                 .font(.system(size: 9).weight(.semibold))
                 .tracking(1.2)
                 .foregroundStyle(AppColors.terra)
