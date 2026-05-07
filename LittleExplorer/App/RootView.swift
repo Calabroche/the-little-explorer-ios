@@ -11,8 +11,8 @@ struct RootView: View {
             RideTrackerView()
                 .tabItem { Label("Track", systemImage: "record.circle") }
 
-            PlannerView()
-                .tabItem { Label("Plan", systemImage: "map") }
+            ItineraryView()
+                .tabItem { Label("Itinéraire", systemImage: "map") }
 
             ProfileView()
                 .tabItem { Label("Profil", systemImage: "person.crop.circle") }

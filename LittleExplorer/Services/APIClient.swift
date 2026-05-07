@@ -43,11 +43,13 @@ actor APIClient {
         return try await get("/api/commune-search", query: ["q": query])
     }
 
-    func reverseGeocode(lat: Double, lng: Double) async throws -> [CommuneResult] {
-        try await get("/api/commune-search", query: [
+    func reverseGeocode(lat: Double, lng: Double, exclude: String? = nil) async throws -> [CommuneResult] {
+        var query: [String: String] = [
             "lat": String(lat),
             "lng": String(lng),
-        ])
+        ]
+        if let exclude, !exclude.isEmpty { query["exclude"] = exclude }
+        return try await get("/api/commune-search", query: query)
     }
 
     // MARK: - Elevation
