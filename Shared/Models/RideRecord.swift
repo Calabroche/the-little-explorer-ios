@@ -39,9 +39,14 @@ struct RideRecord: Codable, Identifiable, Hashable {
     let weather: Weather?
     let bestEfforts: BestEfforts?
     let photos: [String]?
+    let hrZones: HRZones?
+    let aed: Double?
+    let riderKg: Double?
+    let totalMass: Double?
+    let paceSPerKm: Int?
 
     enum CodingKeys: String, CodingKey {
-        case id, type, title, date, location, duration, distance, speed, elevation, descent, gps, altitude, heartrate, calories, np, tss, vi, wkg, ef, trimp, vam, ftp, weather, bestEfforts, photos
+        case id, type, title, date, location, duration, distance, speed, elevation, descent, gps, altitude, heartrate, calories, np, tss, vi, wkg, ef, trimp, vam, ftp, weather, bestEfforts, photos, hrZones, aed
         case originalType = "original_type"
         case rawDate
         case durationMin = "duration_min"
@@ -55,7 +60,20 @@ struct RideRecord: Codable, Identifiable, Hashable {
         case maxHr = "max_hr"
         case avgPower = "avg_power"
         case ifFactor = "if_factor"
+        case riderKg = "rider_kg"
+        case totalMass = "total_mass"
+        case paceSPerKm = "pace_s_per_km"
     }
+}
+
+/// Per-zone time spent, in minutes. Backend-computed against the user's
+/// HR max + thresholds. Used by the Zones FC bars on activity detail.
+struct HRZones: Codable, Hashable {
+    let z1: Double
+    let z2: Double
+    let z3: Double
+    let z4: Double
+    let z5: Double
 }
 
 struct Weather: Codable, Hashable {

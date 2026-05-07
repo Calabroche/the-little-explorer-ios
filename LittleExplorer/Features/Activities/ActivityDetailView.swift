@@ -1,77 +1,709 @@
-import MapKit
+import Charts
 import SwiftUI
 
+/// Comprehensive ride detail page — mirrors the web's AnalysisPage,
+/// with charts stacked vertically (one above another) so each one has
+/// breathing room on a phone-sized screen.
+///
+/// Layout:
+///   1. Header: sport pill + date · location, big serif title
+///   2. Top stats card (Durée / Distance / Moy / Max / Montée / FC moy / FC max / Calories)
+///   3. FTP estimé card with terra left-rule (cycling-only)
+///   4. HR + slope composed chart
+///   5. Speed area chart (blue)
+///   6. Power area chart (green) — computed from speed + gradient
+///   7. Elevation area chart (terra)
+///   8. HR Zones bars (5 zones)
+///   9. Big interactive map with tap-to-inspect popup
+///  10. VO2 max card + Power summary card (estimated)
+///  11. Effort & énergie 3-column grid (Puissance / Cardio / Mécanique & Météo)
 struct ActivityDetailView: View {
     let activity: RideRecord
+
+    private var chartData: [ChartPoint] { PowerStream.build(from: activity) }
+    private var hasHeartRate: Bool { (activity.heartrate?.count ?? 0) > 10 }
+    private var hasPower: Bool { chartData.contains(where: { $0.power > 0 }) }
+    private var hasGPS: Bool { activity.gps.count > 1 }
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                map
-                metricsGrid
-                if let altitude = activity.altitude, !altitude.isEmpty {
-                    elevationChart(altitude)
+                header
+                topStatsCard
+                if activity.np != nil { ftpCard }
+                if hasHeartRate { hrSlopeChart }
+                speedChart
+                if hasPower { powerChart }
+                elevationChart
+                if let zones = activity.hrZones { hrZonesCard(zones: zones) }
+                if hasGPS {
+                    cardWrapper(label: "CARTE DU TRAJET") {
+                        RouteAnalysisMap(activity: activity)
+                    }
+                }
+                summaryRow
+                effortMetricsCard
+                Spacer(minLength: 24)
+            }
+            .padding(16)
+        }
+        .background(AppColors.cream)
+        .navigationTitle("")
+        .toolbar {
+            ToolbarItem(placement: .principal) {
+                BrandLockup(compact: true)
+            }
+        }
+        .toolbarTitleDisplayMode(.inline)
+    }
+
+    // MARK: - Header
+
+    private var header: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                sportPill
+                Text("\(activity.date) · \(activity.location ?? "—")")
+                    .font(.system(size: 10).weight(.semibold))
+                    .tracking(1.4)
+                    .foregroundStyle(AppColors.inkLight)
+                Spacer(minLength: 0)
+            }
+            Text(activity.title)
+                .font(.system(size: 30, design: .serif).weight(.heavy))
+                .foregroundStyle(AppColors.ink)
+                .lineSpacing(2)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private var sportPill: some View {
+        let sport = Sport(backendType: activity.type)
+        let label = sport?.displayName.uppercased() ?? activity.type.uppercased()
+        return HStack(spacing: 5) {
+            Image(systemName: sport?.symbol ?? "figure.run").font(.system(size: 10))
+            Text(label).font(.system(size: 10).weight(.bold)).tracking(1.2)
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 4)
+        .background(sport?.color ?? AppColors.terra, in: Capsule())
+        .foregroundStyle(.white)
+    }
+
+    // MARK: - Top stats card
+
+    private var topStatsCard: some View {
+        cardWrapper(label: nil) {
+            LazyVGrid(columns: [
+                GridItem(.flexible(), alignment: .leading),
+                GridItem(.flexible(), alignment: .leading),
+                GridItem(.flexible(), alignment: .leading),
+                GridItem(.flexible(), alignment: .leading),
+            ], alignment: .leading, spacing: 14) {
+                statCell(label: "DURÉE", value: activity.duration, unit: nil)
+                statCell(label: "DISTANCE", value: activity.distance.map { String(format: "%.2f", $0) }, unit: "km")
+                statCell(label: speedLabel, value: speedValue, unit: speedUnit)
+                statCell(label: "MAX", value: activity.maxSpeed.map { String(format: "%.1f", $0) }, unit: "km/h")
+                statCell(label: "MONTÉE", value: activity.elevation.map { String(format: "%.1f", $0) }, unit: "m")
+                statCell(label: "FC MOY", value: activity.avgHr.map { String(format: "%.1f", $0) }, unit: "bpm")
+                statCell(label: "FC MAX", value: activity.maxHr.map(String.init), unit: "bpm")
+                statCell(label: "CALORIES", value: activity.calories.map(String.init), unit: "kcal")
+            }
+        }
+    }
+
+    private var speedLabel: String { activity.type == "running" ? "ALLURE" : "MOY" }
+    private var speedUnit: String? { activity.type == "running" ? "/km" : "km/h" }
+    private var speedValue: String? {
+        if activity.type == "running", let pace = activity.paceSPerKm {
+            return String(format: "%d:%02d", pace / 60, pace % 60)
+        }
+        return activity.speed.map { String(format: "%.1f", $0) }
+    }
+
+    // MARK: - FTP banner
+
+    private var ftpCard: some View {
+        let ftp = activity.ftp ?? PowerStream.fallbackFtp
+        let riderKg = activity.riderKg ?? PowerStream.fallbackRiderKg
+        let wkg = (Double(ftp) / riderKg * 100).rounded() / 100
+        return HStack(spacing: 4) {
+            Rectangle().fill(AppColors.terra).frame(width: 4)
+            VStack(alignment: .leading, spacing: 12) {
+                Text("FTP ESTIMÉ")
+                    .font(.system(size: 10).weight(.semibold))
+                    .tracking(1.4)
+                    .foregroundStyle(AppColors.inkLight)
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text("\(ftp)")
+                        .font(.system(size: 36, design: .serif).weight(.heavy))
+                        .foregroundStyle(AppColors.ink)
+                    Text("W")
+                        .font(.system(size: 13))
+                        .foregroundStyle(AppColors.inkLight)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Formule : best 20 min × 0,95 (Coggan)")
+                        .font(.system(size: 11))
+                        .foregroundStyle(AppColors.inkMid)
+                    HStack(spacing: 4) {
+                        Text("FTP =")
+                        Text("\(ftp) W").foregroundStyle(AppColors.terra).fontWeight(.bold)
+                        Text("·")
+                        Text("\(Int(riderKg)) kg → \(String(format: "%.2f", wkg)) W/kg")
+                    }
+                    .font(.system(size: 11))
+                    .foregroundStyle(AppColors.inkMid)
+                    Text("Calculée depuis tes meilleures sorties non assistées · pour mesurer (vs estimer), un capteur de puissance est nécessaire.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(AppColors.inkLight)
+                        .lineSpacing(2)
                 }
             }
-            .padding()
-        }
-        .navigationTitle(activity.title)
-        .navigationBarTitleDisplayMode(.inline)
-    }
-
-    private var map: some View {
-        Map {
-            MapPolyline(coordinates: activity.gps.map(\.clLocation))
-                .stroke(Color.accentColor, lineWidth: 4)
-        }
-        .frame(height: 220)
-        .clipShape(RoundedRectangle(cornerRadius: 16))
-        .allowsHitTesting(false)
-    }
-
-    private var metricsGrid: some View {
-        LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
-            metric("Distance", value: activity.distance.map { String(format: "%.2f km", $0) } ?? "—")
-            metric("Duration", value: activity.duration)
-            metric("Avg speed", value: activity.speed.map { String(format: "%.1f km/h", $0) } ?? "—")
-            metric("Elevation", value: activity.elevation.map { "\(Int($0)) m" } ?? "—")
-            if let np = activity.np { metric("NP", value: "\(np) W") }
-            if let avgHr = activity.avgHr { metric("Avg HR", value: "\(Int(avgHr)) bpm") }
-            if let tss = activity.tss { metric("TSS", value: "\(tss)") }
-            if let calories = activity.calories { metric("Calories", value: "\(calories) kcal") }
-        }
-    }
-
-    private func metric(_ label: String, value: String) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label.uppercased()).font(.caption2).foregroundStyle(.secondary)
-            Text(value).font(.title3).fontWeight(.semibold)
+            .padding(.vertical, 14)
+            .padding(.horizontal, 14)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+        .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 4))
+        .overlay(RoundedRectangle(cornerRadius: 4).stroke(AppColors.creamBorder, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 4))
     }
 
-    private func elevationChart(_ altitudes: [Double]) -> some View {
-        // Simple inline area sparkline — full Charts integration is a v0+ TODO.
-        GeometryReader { proxy in
-            let minA = altitudes.min() ?? 0
-            let maxA = altitudes.max() ?? 1
-            let range = max(maxA - minA, 1)
-            let step = proxy.size.width / CGFloat(max(altitudes.count - 1, 1))
-            Path { path in
-                path.move(to: CGPoint(x: 0, y: proxy.size.height))
-                for (i, alt) in altitudes.enumerated() {
-                    let x = CGFloat(i) * step
-                    let y = proxy.size.height - (CGFloat((alt - minA) / range) * proxy.size.height)
-                    path.addLine(to: CGPoint(x: x, y: y))
+    // MARK: - HR + Slope chart
+
+    private var hrSlopeChart: some View {
+        cardWrapper(label: "FRÉQUENCE CARDIAQUE · INCLINAISON") {
+            Chart {
+                ForEach(chartData) { p in
+                    if p.gradientPct > 0 {
+                        BarMark(
+                            x: .value("km", p.distKm),
+                            y: .value("pente", p.gradientPct),
+                            width: .fixed(2),
+                        )
+                        .foregroundStyle(AppColors.terra.opacity(0.65))
+                    } else if p.gradientPct < 0 {
+                        BarMark(
+                            x: .value("km", p.distKm),
+                            y: .value("pente", p.gradientPct),
+                            width: .fixed(2),
+                        )
+                        .foregroundStyle(AppColors.blue.opacity(0.65))
+                    }
                 }
-                path.addLine(to: CGPoint(x: proxy.size.width, y: proxy.size.height))
-                path.closeSubpath()
+                ForEach(chartData) { p in
+                    if let hr = p.heartRate {
+                        LineMark(
+                            x: .value("km", p.distKm),
+                            y: .value("FC", hr),
+                            series: .value("series", "hr"),
+                        )
+                        .foregroundStyle(AppColors.terra)
+                        .interpolationMethod(.catmullRom)
+                    }
+                }
             }
-            .fill(Color.accentColor.opacity(0.3))
+            .frame(height: 220)
+            .chartXAxis { AxisMarks { _ in AxisValueLabel().font(.system(size: 9)) } }
+            .chartYAxis {
+                AxisMarks(position: .leading) { _ in
+                    AxisValueLabel().font(.system(size: 9))
+                    AxisGridLine().foregroundStyle(AppColors.creamBorder)
+                }
+            }
+            chartLegend(items: [
+                (AppColors.terra, "FC (bpm)"),
+                (AppColors.terra.opacity(0.65), "Montée"),
+                (AppColors.blue.opacity(0.65), "Descente"),
+            ])
         }
-        .frame(height: 100)
-        .padding(.top, 8)
+    }
+
+    // MARK: - Speed chart
+
+    private var speedChart: some View {
+        cardWrapper(label: "VITESSE (KM/H)") {
+            Chart {
+                ForEach(chartData) { p in
+                    if let speed = p.speedKmh {
+                        AreaMark(
+                            x: .value("km", p.distKm),
+                            y: .value("vitesse", speed),
+                        )
+                        .foregroundStyle(LinearGradient(
+                            colors: [AppColors.blue.opacity(0.45), AppColors.blue.opacity(0)],
+                            startPoint: .top, endPoint: .bottom,
+                        ))
+                        LineMark(
+                            x: .value("km", p.distKm),
+                            y: .value("vitesse", speed),
+                        )
+                        .foregroundStyle(AppColors.blue)
+                        .interpolationMethod(.catmullRom)
+                    }
+                }
+            }
+            .frame(height: 200)
+            .chartXAxis { AxisMarks { _ in AxisValueLabel().font(.system(size: 9)) } }
+            .chartYAxis {
+                AxisMarks(position: .leading) { _ in
+                    AxisValueLabel().font(.system(size: 9))
+                    AxisGridLine().foregroundStyle(AppColors.creamBorder)
+                }
+            }
+        }
+    }
+
+    // MARK: - Power chart
+
+    private var powerChart: some View {
+        cardWrapper(label: "PUISSANCE ESTIMÉE (W)") {
+            Chart {
+                ForEach(chartData) { p in
+                    AreaMark(
+                        x: .value("km", p.distKm),
+                        y: .value("W", p.power),
+                    )
+                    .foregroundStyle(LinearGradient(
+                        colors: [AppColors.green.opacity(0.5), AppColors.green.opacity(0)],
+                        startPoint: .top, endPoint: .bottom,
+                    ))
+                    LineMark(
+                        x: .value("km", p.distKm),
+                        y: .value("W", p.power),
+                    )
+                    .foregroundStyle(AppColors.green)
+                    .interpolationMethod(.catmullRom)
+                }
+            }
+            .frame(height: 200)
+            .chartXAxis { AxisMarks { _ in AxisValueLabel().font(.system(size: 9)) } }
+            .chartYAxis {
+                AxisMarks(position: .leading) { _ in
+                    AxisValueLabel().font(.system(size: 9))
+                    AxisGridLine().foregroundStyle(AppColors.creamBorder)
+                }
+            }
+            Text("Puissance estimée par modèle physique (gravité + roulement + aéro). Pas mesurée.")
+                .font(.system(size: 11))
+                .foregroundStyle(AppColors.inkLight)
+                .lineSpacing(2)
+        }
+    }
+
+    // MARK: - Elevation chart
+
+    private var elevationChart: some View {
+        cardWrapper(label: "PROFIL D'ALTITUDE") {
+            Chart {
+                ForEach(chartData) { p in
+                    if let alt = p.altitude {
+                        AreaMark(
+                            x: .value("km", p.distKm),
+                            y: .value("alt", alt),
+                        )
+                        .foregroundStyle(LinearGradient(
+                            colors: [AppColors.terra.opacity(0.4), AppColors.terra.opacity(0)],
+                            startPoint: .top, endPoint: .bottom,
+                        ))
+                        LineMark(
+                            x: .value("km", p.distKm),
+                            y: .value("alt", alt),
+                        )
+                        .foregroundStyle(AppColors.terra)
+                        .interpolationMethod(.catmullRom)
+                    }
+                }
+            }
+            .frame(height: 180)
+            .chartXAxis { AxisMarks { _ in AxisValueLabel().font(.system(size: 9)) } }
+            .chartYAxis {
+                AxisMarks(position: .leading) { _ in
+                    AxisValueLabel().font(.system(size: 9))
+                    AxisGridLine().foregroundStyle(AppColors.creamBorder)
+                }
+            }
+        }
+    }
+
+    // MARK: - HR Zones
+
+    private func hrZonesCard(zones: HRZones) -> some View {
+        let rows: [(String, String, Double, Color)] = [
+            ("Z1 — Récupération", "< 136 bpm", zones.z1, AppColors.blue),
+            ("Z2 — Endurance",    "137–149 bpm", zones.z2, AppColors.green),
+            ("Z3 — Tempo",        "150–162 bpm", zones.z3, AppColors.terra),
+            ("Z4 — Seuil",        "163–175 bpm", zones.z4, Color(hex: "E07030")),
+            ("Z5 — VO₂max",       "> 176 bpm",   zones.z5, Color(hex: "CC3333")),
+        ]
+        let total = rows.reduce(0) { $0 + $1.2 }
+        return cardWrapper(label: "ZONES FC — TEMPS PASSÉ") {
+            VStack(spacing: 12) {
+                ForEach(rows.indices, id: \.self) { i in
+                    let (label, bpm, val, color) = rows[i]
+                    let pct = total > 0 ? val / total * 100 : 0
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(label)
+                                .font(.system(size: 11).weight(.semibold))
+                                .foregroundStyle(AppColors.inkMid)
+                            Text(bpm)
+                                .font(.system(size: 10))
+                                .foregroundStyle(AppColors.inkLight)
+                            Spacer()
+                            HStack(spacing: 4) {
+                                Text(String(format: "%.0f min", val))
+                                Text("·")
+                                Text(String(format: "%.0f%%", pct)).foregroundStyle(AppColors.ink).bold()
+                            }
+                            .font(.system(size: 11))
+                            .foregroundStyle(AppColors.inkLight)
+                        }
+                        GeometryReader { geo in
+                            ZStack(alignment: .leading) {
+                                RoundedRectangle(cornerRadius: 2).fill(AppColors.creamDark).frame(height: 7)
+                                RoundedRectangle(cornerRadius: 2).fill(color).frame(width: geo.size.width * pct / 100, height: 7)
+                            }
+                        }
+                        .frame(height: 7)
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Summary cards row (VO2 + Power estimate)
+
+    private var summaryRow: some View {
+        VStack(spacing: 14) {
+            if activity.maxHr != nil {
+                Vo2MaxCard(activity: activity)
+            }
+            if hasPower {
+                PowerSummaryCard(activity: activity, chartData: chartData)
+            }
+        }
+    }
+
+    // MARK: - Effort metrics
+
+    private var effortMetricsCard: some View {
+        guard activity.np != nil || activity.tss != nil || activity.trimp != nil else {
+            return AnyView(EmptyView())
+        }
+        return AnyView(
+            cardWrapper(label: "EFFORT & ÉNERGIE") {
+                VStack(alignment: .leading, spacing: 18) {
+                    metricsBlock(title: "PUISSANCE", color: AppColors.terra, rows: powerRows)
+                    metricsBlock(title: "CARDIO", color: AppColors.blue, rows: cardioRows)
+                    metricsBlock(title: "MÉCANIQUE & MÉTÉO", color: AppColors.green, rows: mechanicalRows)
+                    if let weather = activity.weather {
+                        weatherBlock(weather: weather)
+                    }
+                }
+            },
+        )
+    }
+
+    private struct MetricRow: Identifiable {
+        let id = UUID()
+        let key: String
+        let value: String
+        let unit: String?
+        let tip: String?
+    }
+
+    private var powerRows: [MetricRow] {
+        var rows: [MetricRow] = []
+        if let np = activity.np { rows.append(MetricRow(key: "NP", value: "\(np)", unit: "W", tip: "Puissance normalisée")) }
+        if let avg = activity.avgPower { rows.append(MetricRow(key: "AP", value: "\(avg)", unit: "W", tip: "Puissance moyenne brute")) }
+        if let tss = activity.tss { rows.append(MetricRow(key: "TSS", value: "\(tss)", unit: nil, tip: "Charge totale de la sortie")) }
+        if let f = activity.ifFactor { rows.append(MetricRow(key: "IF", value: String(format: "%.2f", f), unit: nil, tip: "Intensité relative au FTP")) }
+        if let vi = activity.vi { rows.append(MetricRow(key: "VI", value: String(format: "%.1f", vi), unit: nil, tip: "Régularité de l'effort")) }
+        if let wkg = activity.wkg { rows.append(MetricRow(key: "W/kg", value: String(format: "%.2f", wkg), unit: "W/kg", tip: "Puissance par kg")) }
+        return rows
+    }
+
+    private var cardioRows: [MetricRow] {
+        var rows: [MetricRow] = []
+        if let trimp = activity.trimp { rows.append(MetricRow(key: "TRIMP", value: "\(trimp)", unit: nil, tip: "Charge cardiaque totale")) }
+        if let ef = activity.ef { rows.append(MetricRow(key: "EF", value: String(format: "%.2f", ef), unit: "W/bpm", tip: "Efficacité aérobie")) }
+        if let aed = activity.aed { rows.append(MetricRow(key: "AeD", value: String(format: "%.1f%%", aed), unit: nil, tip: "Dérive cardiaque")) }
+        if let avgHr = activity.avgHr { rows.append(MetricRow(key: "FC moy", value: String(format: "%.1f", avgHr), unit: "bpm", tip: "Fréquence cardiaque moyenne")) }
+        if let maxHr = activity.maxHr { rows.append(MetricRow(key: "FC max", value: "\(maxHr)", unit: "bpm", tip: "Fréquence max mesurée")) }
+        return rows
+    }
+
+    private var mechanicalRows: [MetricRow] {
+        var rows: [MetricRow] = []
+        if let vam = activity.vam { rows.append(MetricRow(key: "VAM", value: "\(Int(vam.rounded()))", unit: "m/h", tip: "Vitesse ascensionnelle")) }
+        if let max = activity.maxIncline { rows.append(MetricRow(key: "Pente max", value: String(format: "+%.1f", max), unit: "%", tip: "Inclinaison maximale")) }
+        if let min = activity.minIncline { rows.append(MetricRow(key: "Pente min", value: String(format: "%.1f", min), unit: "%", tip: "Descente max")) }
+        return rows
+    }
+
+    private func metricsBlock(title: String, color: Color, rows: [MetricRow]) -> some View {
+        guard !rows.isEmpty else { return AnyView(EmptyView()) }
+        return AnyView(
+            VStack(alignment: .leading, spacing: 8) {
+                Text(title)
+                    .font(.system(size: 10).weight(.semibold))
+                    .tracking(1.4)
+                    .foregroundStyle(color)
+                ForEach(rows) { row in
+                    metricRow(row)
+                    Divider().background(AppColors.creamBorder)
+                }
+            },
+        )
+    }
+
+    private func metricRow(_ row: MetricRow) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(row.key)
+                    .font(.system(size: 11).weight(.bold))
+                    .foregroundStyle(AppColors.inkMid)
+                if let tip = row.tip {
+                    Text(tip)
+                        .font(.system(size: 10))
+                        .foregroundStyle(AppColors.inkLight)
+                        .lineLimit(1)
+                }
+            }
+            Spacer(minLength: 8)
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(row.value)
+                    .font(.system(size: 22, design: .serif).weight(.heavy))
+                    .foregroundStyle(AppColors.ink)
+                    .monospacedDigit()
+                if let unit = row.unit {
+                    Text(unit)
+                        .font(.system(size: 11))
+                        .foregroundStyle(AppColors.inkLight)
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func weatherBlock(weather: Weather) -> some View {
+        let temp = weather.temp.map { String(format: "%.0f°C", $0) } ?? "—"
+        let wind = weather.windspeed.map { "\(Int($0)) km/h" } ?? "—"
+        let hum = weather.humidity.map { "\($0)%" } ?? "—"
+        let desc = weather.description ?? ""
+        return VStack(alignment: .leading, spacing: 6) {
+            Text("MÉTÉO DU JOUR")
+                .font(.system(size: 10).weight(.semibold))
+                .tracking(1.4)
+                .foregroundStyle(AppColors.inkLight)
+            VStack(alignment: .leading, spacing: 3) {
+                Text("\(desc) · \(temp)")
+                    .font(.system(size: 12))
+                    .foregroundStyle(AppColors.inkMid)
+                Text("Vent \(wind) · Humidité \(hum)")
+                    .font(.system(size: 12))
+                    .foregroundStyle(AppColors.inkMid)
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColors.creamDark, in: RoundedRectangle(cornerRadius: 4))
+    }
+
+    // MARK: - Helpers
+
+    @ViewBuilder
+    private func cardWrapper<Content: View>(label: String?, @ViewBuilder content: () -> Content) -> some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if let label {
+                Text(label)
+                    .font(.system(size: 10).weight(.semibold))
+                    .tracking(1.4)
+                    .foregroundStyle(AppColors.inkLight)
+            }
+            content()
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 4))
+        .overlay(RoundedRectangle(cornerRadius: 4).stroke(AppColors.creamBorder, lineWidth: 1))
+    }
+
+    private func statCell(label: String, value: String?, unit: String?) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(label)
+                .font(.system(size: 9).weight(.semibold))
+                .tracking(1.2)
+                .foregroundStyle(AppColors.inkLight)
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(value ?? "—")
+                    .font(.system(size: 22, design: .serif).weight(.heavy))
+                    .foregroundStyle(AppColors.ink)
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                if let unit, value != nil {
+                    Text(unit)
+                        .font(.system(size: 10))
+                        .foregroundStyle(AppColors.inkLight)
+                }
+            }
+        }
+    }
+
+    private func chartLegend(items: [(Color, String)]) -> some View {
+        HStack(spacing: 14) {
+            ForEach(items.indices, id: \.self) { i in
+                HStack(spacing: 5) {
+                    Rectangle().fill(items[i].0).frame(width: 12, height: 3)
+                    Text(items[i].1).font(.system(size: 10)).foregroundStyle(AppColors.inkLight)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - VO2 max card
+
+private struct Vo2MaxCard: View {
+    let activity: RideRecord
+    @State private var hrRest: Double = 60
+
+    var body: some View {
+        let hrMax = activity.maxHr ?? 0
+        let vo2 = hrMax > 0 ? ((15 * Double(hrMax) / hrRest) * 10).rounded() / 10 : 0
+        let zone: (label: String, color: Color) = {
+            if vo2 >= 55 { return ("Excellent", AppColors.green) }
+            if vo2 >= 45 { return ("Bon", AppColors.blue) }
+            if vo2 >= 35 { return ("Moyen", AppColors.terra) }
+            return ("Faible", AppColors.inkLight)
+        }()
+
+        VStack(alignment: .leading, spacing: 14) {
+            Text("VO₂ MAX ESTIMÉ")
+                .font(.system(size: 10).weight(.semibold))
+                .tracking(1.4)
+                .foregroundStyle(AppColors.inkLight)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(String(format: "%.1f", vo2))")
+                    .font(.system(size: 42, design: .serif).weight(.heavy))
+                    .foregroundStyle(AppColors.ink)
+                Text("ml/kg/min")
+                    .font(.system(size: 11))
+                    .foregroundStyle(AppColors.inkLight)
+            }
+            Text(zone.label.uppercased())
+                .font(.system(size: 10).weight(.bold)).tracking(1.2)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(zone.color, in: Capsule())
+                .foregroundStyle(.white)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("FC REPOS (BPM)")
+                    .font(.system(size: 9).weight(.semibold))
+                    .tracking(1.2)
+                    .foregroundStyle(AppColors.inkLight)
+                HStack(spacing: 12) {
+                    Slider(value: $hrRest, in: 40...90, step: 1)
+                        .tint(AppColors.terra)
+                    Text("\(Int(hrRest))")
+                        .font(.system(size: 18, design: .serif).weight(.bold))
+                        .foregroundStyle(AppColors.ink)
+                        .frame(minWidth: 28, alignment: .trailing)
+                }
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Formule : 15 × (FC max / FC repos)")
+                Text("FC max mesurée : \(activity.maxHr.map { "\($0) bpm" } ?? "—")")
+            }
+            .font(.system(size: 11))
+            .foregroundStyle(AppColors.inkLight)
+            .lineSpacing(2)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 4))
+        .overlay(RoundedRectangle(cornerRadius: 4).stroke(AppColors.creamBorder, lineWidth: 1))
+    }
+}
+
+// MARK: - Estimated power summary card
+
+private struct PowerSummaryCard: View {
+    let activity: RideRecord
+    let chartData: [ChartPoint]
+
+    var body: some View {
+        let avg = chartData.isEmpty ? 0 : Int((Double(chartData.reduce(0) { $0 + $1.power }) / Double(chartData.count)).rounded())
+        let max = chartData.map(\.power).max() ?? 0
+        let totalKj = Double(avg) * Double(activity.durationMin) * 60 / 1000
+        let rider = activity.riderKg ?? PowerStream.fallbackRiderKg
+        let total = activity.totalMass ?? PowerStream.fallbackMass
+        let bike = ((total - rider) * 100).rounded() / 100
+        let fr = (total * PowerStream.g * PowerStream.crr * 10).rounded() / 10
+
+        return VStack(alignment: .leading, spacing: 14) {
+            Text("PUISSANCE ESTIMÉE")
+                .font(.system(size: 10).weight(.semibold))
+                .tracking(1.4)
+                .foregroundStyle(AppColors.inkLight)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("\(avg)")
+                    .font(.system(size: 42, design: .serif).weight(.heavy))
+                    .foregroundStyle(AppColors.ink)
+                Text("watts moyens")
+                    .font(.system(size: 11))
+                    .foregroundStyle(AppColors.inkLight)
+            }
+            HStack(spacing: 24) {
+                stat(label: "MAX", value: "\(max)", unit: "W")
+                stat(label: "TRAVAIL TOTAL", value: "\(Int(totalKj.rounded()))", unit: "kJ")
+            }
+            .padding(.top, 4)
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text("Formule : P = (F_gravité + F_roulement + F_aéro) × v")
+                Text("Coureur : \(Int(rider)) kg · Vélo : \(String(format: "%.2f", bike)) kg · Total : \(String(format: "%.2f", total)) kg")
+                HStack(spacing: 4) {
+                    Text("F_roulement").foregroundStyle(AppColors.terra)
+                    Text("= \(String(format: "%.2f", total)) × 9,81 × 0,004 = ")
+                    Text("\(String(format: "%.1f", fr)) N").foregroundStyle(AppColors.ink).bold()
+                    Text("(constant)")
+                }
+                HStack(spacing: 4) {
+                    Text("F_gravité").foregroundStyle(AppColors.terra)
+                    Text("= \(String(format: "%.2f", total)) × 9,81 × pente → varie")
+                }
+                HStack(spacing: 4) {
+                    Text("F_aéro").foregroundStyle(AppColors.terra)
+                    Text("= 0,5 × 1,225 × 0,3 × v² → varie")
+                }
+            }
+            .font(.system(size: 11))
+            .foregroundStyle(AppColors.inkMid)
+            .lineSpacing(3)
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 4))
+        .overlay(RoundedRectangle(cornerRadius: 4).stroke(AppColors.creamBorder, lineWidth: 1))
+    }
+
+    private func stat(label: String, value: String, unit: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.system(size: 9).weight(.semibold))
+                .tracking(1.2)
+                .foregroundStyle(AppColors.inkLight)
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(value)
+                    .font(.system(size: 18, design: .serif).weight(.bold))
+                    .foregroundStyle(AppColors.ink)
+                    .monospacedDigit()
+                Text(unit).font(.system(size: 10)).foregroundStyle(AppColors.inkLight)
+            }
+        }
     }
 }

@@ -12,9 +12,10 @@ struct FeedView: View {
         NavigationStack {
             content(env: env)
                 .background(AppColors.cream)
-                .navigationTitle("Activités")
-                .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
+                    ToolbarItem(placement: .topBarLeading) {
+                        BrandLockup()
+                    }
                     ToolbarItem(placement: .topBarTrailing) {
                         Picker("User", selection: $env.currentUser) {
                             ForEach(AppUser.allCases) { Text($0.displayName).tag($0) }
@@ -22,6 +23,7 @@ struct FeedView: View {
                         .pickerStyle(.menu)
                     }
                 }
+                .toolbarTitleDisplayMode(.inline)
                 .task { await env.activityStore.load(user: env.currentUser) }
                 .refreshable { await env.activityStore.load(user: env.currentUser, force: true) }
                 .onChange(of: env.currentUser) { _, newUser in
@@ -44,6 +46,24 @@ struct FeedView: View {
             )
         case .loaded:
             FeedScrollView(env: env)
+        }
+    }
+}
+
+/// Editorial wordmark — "The Little / Explorer" stacked, with `Explorer`
+/// italicised in terra. Mirrors the web sidebar lockup so the brand
+/// shows up consistently on the welcome page.
+struct BrandLockup: View {
+    var compact: Bool = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: -2) {
+            Text("The Little")
+                .font(.system(size: compact ? 14 : 16, design: .serif).weight(.heavy))
+                .foregroundStyle(AppColors.ink)
+            Text("Explorer")
+                .font(.system(size: compact ? 14 : 16, design: .serif).weight(.heavy).italic())
+                .foregroundStyle(AppColors.terra)
         }
     }
 }
