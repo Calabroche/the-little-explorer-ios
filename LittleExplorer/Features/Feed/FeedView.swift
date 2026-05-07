@@ -78,10 +78,10 @@ private struct FeedScrollView: View {
 
                 Divider().padding(.horizontal, 16)
 
-                LazyVStack(spacing: 8) {
+                LazyVStack(spacing: 14) {
                     ForEach(filtered) { activity in
                         NavigationLink(value: activity) {
-                            ActivityCardRow(activity: activity)
+                            ActivityCard(activity: activity)
                                 .padding(.horizontal, 16)
                         }
                         .buttonStyle(.plain)
@@ -146,42 +146,3 @@ private struct SportPicker: View {
     }
 }
 
-// MARK: - Activity card row
-
-private struct ActivityCardRow: View {
-    let activity: RideRecord
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 12) {
-            ZStack {
-                Circle().fill(AppColors.terraLight)
-                    .frame(width: 44, height: 44)
-                Image(systemName: activity.sportSymbol)
-                    .foregroundStyle(AppColors.terra)
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                Text(activity.title)
-                    .font(.system(.subheadline, design: .serif).weight(.bold))
-                    .foregroundStyle(AppColors.ink)
-                    .lineLimit(2)
-                HStack(spacing: 8) {
-                    Text(activity.date)
-                    if let dist = activity.distance { Text("· \(String(format: "%.1f", dist)) km") }
-                    if let elev = activity.elevation { Text("· \(Int(elev)) m") }
-                    Text("· \(activity.duration)")
-                }
-                .font(.caption)
-                .foregroundStyle(AppColors.inkLight)
-                if let tss = activity.tss {
-                    Text("TSS \(tss)")
-                        .font(.caption2)
-                        .foregroundStyle(AppColors.terra)
-                }
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(12)
-        .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 4))
-        .overlay(RoundedRectangle(cornerRadius: 4).stroke(AppColors.creamBorder, lineWidth: 1))
-    }
-}
