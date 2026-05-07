@@ -1,0 +1,43 @@
+import ActivityKit
+import Foundation
+import Observation
+
+@Observable
+final class RideActivityManager {
+    private(set) var current: Activity<RideActivityAttributes>?
+
+    func start(sportLabel: String) async {
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        let attributes = RideActivityAttributes(sportLabel: sportLabel, startedAt: .now)
+        let initial = RideActivityAttributes.RideState(
+            distanceKm: 0,
+            durationSec: 0,
+            speedKmh: 0,
+            elevationGainM: 0,
+            heartRate: nil,
+            nextManeuver: nil,
+            nextManeuverDistanceM: nil,
+            nextManeuverSymbol: nil,
+        )
+        do {
+            current = try Activity.request(
+                attributes: attributes,
+                content: .init(state: initial, staleDate: nil),
+                pushType: nil,
+            )
+        } catch {
+            print("Failed to start Live Activity: \(error)")
+        }
+    }
+
+    func update(_ state: RideActivityAttributes.RideState) async {
+        guard let activity = current else { return }
+        await activity.update(.init(state: state, staleDate: nil))
+    }
+
+    func end() async {
+        guard let activity = current else { return }
+        await activity.end(nil, dismissalPolicy: .immediate)
+        current = nil
+    }
+}

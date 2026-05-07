@@ -1,0 +1,181 @@
+name: LittleExplorer
+options:
+  bundleIdPrefix: com.calabrese.little-explorer-ios
+  developmentLanguage: en
+  deploymentTarget:
+    iOS: "17.0"
+    watchOS: "10.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: false
+  groupSortPosition: top
+  xcodeVersion: "15.0"
+
+settings:
+  base:
+    DEVELOPMENT_TEAM: BKZ9F73H65
+    SWIFT_VERSION: "5.9"
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    GENERATE_INFOPLIST_FILE: NO
+    CURRENT_PROJECT_VERSION: 1
+    MARKETING_VERSION: "0.1.0"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER: YES
+    CLANG_ANALYZER_LOCALIZABILITY_NONLOCALIZED: YES
+  configs:
+    Debug:
+      SWIFT_ACTIVE_COMPILATION_CONDITIONS: DEBUG
+      SWIFT_OPTIMIZATION_LEVEL: "-Onone"
+      ONLY_ACTIVE_ARCH: YES
+    Release:
+      SWIFT_OPTIMIZATION_LEVEL: "-O"
+      ONLY_ACTIVE_ARCH: NO
+      VALIDATE_PRODUCT: YES
+
+configs:
+  Debug: debug
+  Release: release
+
+targets:
+  # ─── iOS App ────────────────────────────────────────────────────────────────
+  LittleExplorer:
+    type: application
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: LittleExplorer
+      - path: Shared
+    resources:
+      - path: LittleExplorer/Resources/Assets.xcassets
+    info:
+      path: LittleExplorer/Resources/Info.plist
+      properties:
+        CFBundleDisplayName: Little Explorer
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen:
+          UIColorName: LaunchBackground
+        UIRequiresFullScreen: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        # Background modes — needed for live tracking while app is suspended.
+        UIBackgroundModes:
+          - location
+          - audio
+        # Privacy strings (App Store reject without these).
+        NSLocationWhenInUseUsageDescription: Little Explorer uses your location to track rides and show your position on the map.
+        NSLocationAlwaysAndWhenInUseUsageDescription: Little Explorer needs continuous location to keep tracking your ride when the screen is off.
+        NSMotionUsageDescription: Used to detect cycling cadence and automatic activity start/stop.
+        # ActivityKit
+        NSSupportsLiveActivities: true
+        NSSupportsLiveActivitiesFrequentUpdates: true
+    dependencies:
+      - target: LittleExplorerLiveActivity
+      - target: LittleExplorerWatch
+      - sdk: MapKit.framework
+      - sdk: CoreLocation.framework
+      - sdk: ActivityKit.framework
+      - sdk: WatchConnectivity.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.calabrese.little-explorer-ios
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        TARGETED_DEVICE_FAMILY: "1,2"
+        CODE_SIGN_ENTITLEMENTS: LittleExplorer/Entitlements/LittleExplorer.entitlements
+        SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+        SUPPORTS_MACCATALYST: NO
+
+  # ─── Live Activity Widget Extension ─────────────────────────────────────────
+  LittleExplorerLiveActivity:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "17.0"
+    sources:
+      - path: LittleExplorerLiveActivity
+      - path: Shared
+    info:
+      path: LittleExplorerLiveActivity/Info.plist
+      properties:
+        CFBundleDisplayName: Little Explorer Activity
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    dependencies:
+      - sdk: ActivityKit.framework
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.calabrese.little-explorer-ios.LiveActivity
+        SKIP_INSTALL: YES
+        TARGETED_DEVICE_FAMILY: "1,2"
+
+  # ─── watchOS App (single target, watchOS 10+) ───────────────────────────────
+  LittleExplorerWatch:
+    type: application
+    platform: watchOS
+    deploymentTarget: "10.0"
+    sources:
+      - path: LittleExplorerWatch
+      - path: Shared
+    resources:
+      - path: LittleExplorerWatch/Resources/Assets.xcassets
+    info:
+      path: LittleExplorerWatch/Resources/Info.plist
+      properties:
+        CFBundleDisplayName: Little Explorer
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        WKApplication: true
+        WKCompanionAppBundleIdentifier: com.calabrese.little-explorer-ios
+        WKBackgroundModes:
+          - workout-processing
+          - location
+        WKWatchOnly: false
+        NSHealthShareUsageDescription: Little Explorer reads heart rate and workout data to enrich your rides.
+        NSHealthUpdateUsageDescription: Little Explorer saves your rides as workouts in Health.
+        NSLocationWhenInUseUsageDescription: Used to track your ride from the watch.
+    dependencies:
+      - sdk: HealthKit.framework
+      - sdk: WatchKit.framework
+      - sdk: WatchConnectivity.framework
+      - sdk: CoreLocation.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.calabrese.little-explorer-ios.watchkitapp
+        TARGETED_DEVICE_FAMILY: "4"
+        CODE_SIGN_ENTITLEMENTS: LittleExplorerWatch/Entitlements/LittleExplorerWatch.entitlements
+        SUPPORTED_PLATFORMS: "watchos watchsimulator"
+
+schemes:
+  LittleExplorer:
+    build:
+      targets:
+        LittleExplorer: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
+  LittleExplorerWatch:
+    build:
+      targets:
+        LittleExplorerWatch: all
+    run:
+      config: Debug
+    archive:
+      config: Release
