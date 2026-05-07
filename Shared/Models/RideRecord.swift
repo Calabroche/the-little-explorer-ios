@@ -1,7 +1,7 @@
 import Foundation
 
 struct RideRecord: Codable, Identifiable, Hashable {
-    let id: String
+    let id: Int
     let type: String
     let originalType: String?
     let title: String
@@ -9,7 +9,7 @@ struct RideRecord: Codable, Identifiable, Hashable {
     let rawDate: String
     let location: String?
     let duration: String
-    let durationMin: Double
+    let durationMin: Int
     let distance: Double?
     let speed: Double?
     let maxSpeed: Double?
@@ -23,7 +23,7 @@ struct RideRecord: Codable, Identifiable, Hashable {
     let timeS: [Double]?
     let maxIncline: Double?
     let minIncline: Double?
-    let avgHr: Int?
+    let avgHr: Double?
     let maxHr: Int?
     let calories: Int?
     let np: Int?
@@ -41,7 +41,7 @@ struct RideRecord: Codable, Identifiable, Hashable {
     enum CodingKeys: String, CodingKey {
         case id, type, title, date, location, duration, distance, speed, elevation, descent, gps, altitude, heartrate, calories, np, tss, vi, wkg, ef, trimp, vam, ftp, weather
         case originalType = "original_type"
-        case rawDate = "rawDate"
+        case rawDate
         case durationMin = "duration_min"
         case maxSpeed = "max_speed"
         case speedKmh = "speed_kmh"
@@ -58,15 +58,10 @@ struct RideRecord: Codable, Identifiable, Hashable {
 
 struct Weather: Codable, Hashable {
     let temp: Double?
-    let condition: String?
-    let icon: String?
-    let windSpeed: Double?
+    let windspeed: Double?
     let humidity: Int?
-
-    enum CodingKeys: String, CodingKey {
-        case temp, condition, icon, humidity
-        case windSpeed = "wind_speed"
-    }
+    let code: Int?
+    let description: String?
 }
 
 extension RideRecord {

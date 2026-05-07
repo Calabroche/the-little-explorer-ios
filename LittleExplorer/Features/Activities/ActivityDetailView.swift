@@ -36,7 +36,7 @@ struct ActivityDetailView: View {
             metric("Avg speed", value: activity.speed.map { String(format: "%.1f km/h", $0) } ?? "—")
             metric("Elevation", value: activity.elevation.map { "\(Int($0)) m" } ?? "—")
             if let np = activity.np { metric("NP", value: "\(np) W") }
-            if let avgHr = activity.avgHr { metric("Avg HR", value: "\(avgHr) bpm") }
+            if let avgHr = activity.avgHr { metric("Avg HR", value: "\(Int(avgHr)) bpm") }
             if let tss = activity.tss { metric("TSS", value: "\(tss)") }
             if let calories = activity.calories { metric("Calories", value: "\(calories) kcal") }
         }
