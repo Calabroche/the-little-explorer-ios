@@ -14,6 +14,9 @@ struct RootView: View {
             ItineraryView()
                 .tabItem { Label("Itinéraire", systemImage: "map") }
 
+            AnalyticsHubView()
+                .tabItem { Label("Analyses", systemImage: "chart.bar.xaxis") }
+
             ProfileView()
                 .tabItem { Label("Profil", systemImage: "person.crop.circle") }
         }

@@ -42,6 +42,8 @@ enum Sport: String, CaseIterable, Identifiable, Codable, Sendable {
     var supportsCycling: Bool { self == .cycling }
 }
 
+
+
 extension Sport {
     /// Resolve the backend's `type` field to a Sport. Returns nil for
     /// unknown values (so they get filtered rather than crashing).

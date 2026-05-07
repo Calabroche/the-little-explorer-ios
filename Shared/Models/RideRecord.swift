@@ -38,9 +38,10 @@ struct RideRecord: Codable, Identifiable, Hashable {
     let ftp: Int?
     let weather: Weather?
     let bestEfforts: BestEfforts?
+    let photos: [String]?
 
     enum CodingKeys: String, CodingKey {
-        case id, type, title, date, location, duration, distance, speed, elevation, descent, gps, altitude, heartrate, calories, np, tss, vi, wkg, ef, trimp, vam, ftp, weather, bestEfforts
+        case id, type, title, date, location, duration, distance, speed, elevation, descent, gps, altitude, heartrate, calories, np, tss, vi, wkg, ef, trimp, vam, ftp, weather, bestEfforts, photos
         case originalType = "original_type"
         case rawDate
         case durationMin = "duration_min"
