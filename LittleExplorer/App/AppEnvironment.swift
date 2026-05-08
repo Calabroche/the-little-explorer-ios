@@ -12,5 +12,12 @@ final class AppEnvironment {
     let location = LocationManager()
     let watch = WatchSessionManager()
     let activityManager = RideActivityManager()
-    let activityStore = ActivityStore()
+    let localRides: LocalRideStore
+    let activityStore: ActivityStore
+
+    init() {
+        let localRides = LocalRideStore()
+        self.localRides = localRides
+        self.activityStore = ActivityStore(localStore: localRides)
+    }
 }
