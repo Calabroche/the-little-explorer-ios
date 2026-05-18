@@ -8,6 +8,14 @@ struct CompareView: View {
     @Environment(AppEnvironment.self) private var environment
     @State private var idA: Int?
     @State private var idB: Int?
+    @State private var pickerSheet: PickerSheet?
+
+    /// Which of the two slots we're picking an activity for.
+    /// Drives the half-sheet that opens when a card is tapped.
+    enum PickerSheet: String, Identifiable, Hashable {
+        case first, second
+        var id: String { rawValue }
+    }
 
     // Power constants (mirror activities/route.ts default profile).
     private static let mass: Double = 74.18
@@ -96,6 +104,19 @@ struct CompareView: View {
             if idA == nil { idA = activities.first?.id }
             if idB == nil, activities.count > 1 { idB = activities[1].id }
         }
+        .sheet(item: $pickerSheet) { which in
+            ActivityPickerSheet(
+                activities: activities,
+                currentSelection: which == .first ? idA : idB,
+                accent: which == .first ? AppColors.terra : AppColors.green,
+                title: which == .first ? "Première sortie" : "Seconde sortie",
+                onSelect: { id in
+                    if which == .first { idA = id } else { idB = id }
+                    pickerSheet = nil
+                },
+                onCancel: { pickerSheet = nil },
+            )
+        }
     }
 
     private func headline() -> some View {
@@ -110,40 +131,77 @@ struct CompareView: View {
     }
 
     private func pickerCard(activities: [RideRecord]) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
-                pickerColumn(label: "Première (orange)", color: AppColors.terra, selection: $idA, activities: activities)
-                pickerColumn(label: "Seconde (verte)", color: AppColors.green, selection: $idB, activities: activities)
-            }
+        VStack(spacing: 10) {
+            selectionRow(
+                label: "PREMIÈRE",
+                color: AppColors.terra,
+                activity: activities.first(where: { $0.id == idA }),
+                onTap: { pickerSheet = .first },
+            )
+            selectionRow(
+                label: "SECONDE",
+                color: AppColors.green,
+                activity: activities.first(where: { $0.id == idB }),
+                onTap: { pickerSheet = .second },
+            )
         }
-        .padding(16)
-        .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 4))
-        .overlay(RoundedRectangle(cornerRadius: 4).stroke(AppColors.creamBorder, lineWidth: 1))
     }
 
-    private func pickerColumn(label: String, color: Color, selection: Binding<Int?>, activities: [RideRecord]) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text(label.uppercased())
-                .font(.system(size: 9).weight(.semibold))
-                .tracking(1.2)
-                .foregroundStyle(color)
-            Picker("Sortie", selection: selection) {
-                Text("—").tag(nil as Int?)
-                ForEach(activities) { activity in
-                    Text(rowLabel(activity)).tag(activity.id as Int?)
+    /// One tappable card representing a slot. Stacks vertically so the
+    /// activity title can render full-width on a single line instead of
+    /// wrapping into 3 cramped lines like the old menu pickers.
+    private func selectionRow(
+        label: String,
+        color: Color,
+        activity: RideRecord?,
+        onTap: @escaping () -> Void,
+    ) -> some View {
+        Button(action: onTap) {
+            HStack(alignment: .center, spacing: 12) {
+                // Coloured rail tells you which slot this is at a glance.
+                Rectangle().fill(color).frame(width: 4)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(label)
+                        .font(.system(size: 9).weight(.bold))
+                        .tracking(1.4)
+                        .foregroundStyle(color)
+                    if let activity {
+                        Text(activity.title)
+                            .font(.system(.subheadline, design: .serif).weight(.bold))
+                            .foregroundStyle(AppColors.ink)
+                            .lineLimit(1)
+                        HStack(spacing: 6) {
+                            Text(activity.date)
+                            Text("·")
+                            if let dist = activity.distance {
+                                Text(String(format: "%.0f km", dist))
+                            }
+                            if let dur = activity.duration as String? {
+                                Text("·")
+                                Text(dur)
+                            }
+                        }
+                        .font(.system(size: 11))
+                        .foregroundStyle(AppColors.inkLight)
+                        .lineLimit(1)
+                    } else {
+                        Text("Choisir une sortie")
+                            .font(.system(.subheadline, design: .serif).italic())
+                            .foregroundStyle(AppColors.inkLight)
+                    }
                 }
+                .padding(.vertical, 10)
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11).weight(.bold))
+                    .foregroundStyle(AppColors.inkLight)
+                    .padding(.trailing, 14)
             }
-            .pickerStyle(.menu)
-            .tint(color)
             .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 6))
+            .overlay(RoundedRectangle(cornerRadius: 6).stroke(AppColors.creamBorder, lineWidth: 1))
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func rowLabel(_ activity: RideRecord) -> String {
-        let dist = activity.distance.map { String(format: "%.0f km", $0) } ?? "—"
-        let title = activity.title.prefix(30)
-        return "\(activity.date) · \(dist) · \(title)"
+        .buttonStyle(.plain)
     }
 
     private var placeholder: some View {
@@ -432,5 +490,97 @@ struct CompareView: View {
                     .lineLimit(1)
             }
         }
+    }
+}
+
+// MARK: - Activity picker sheet
+
+/// Full-height sheet that lists every activity. Tap a row to select
+/// it for one of the Compare slots and dismiss. Replaces the old
+/// inline menu Picker, which wrapped long activity titles into 3
+/// cramped lines on the phone.
+private struct ActivityPickerSheet: View {
+    let activities: [RideRecord]
+    let currentSelection: Int?
+    let accent: Color
+    let title: String
+    let onSelect: (Int?) -> Void
+    let onCancel: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Button {
+                    onSelect(nil)
+                } label: {
+                    HStack {
+                        Text("Aucune")
+                            .font(.system(.body, design: .serif).italic())
+                            .foregroundStyle(AppColors.inkLight)
+                        Spacer()
+                        if currentSelection == nil {
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(accent)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+
+                ForEach(activities) { activity in
+                    Button {
+                        onSelect(activity.id)
+                    } label: {
+                        row(activity: activity, isSelected: activity.id == currentSelection)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .listStyle(.plain)
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Annuler", action: onCancel)
+                        .foregroundStyle(accent)
+                }
+            }
+        }
+    }
+
+    private func row(activity: RideRecord, isSelected: Bool) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            let sport = Sport(backendType: activity.type) ?? .cycling
+            ZStack {
+                Circle().fill(sport.color.opacity(0.15)).frame(width: 32, height: 32)
+                Image(systemName: sport.symbol)
+                    .foregroundStyle(sport.color)
+                    .font(.system(size: 13).weight(.semibold))
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(activity.title)
+                    .font(.system(.subheadline, design: .serif).weight(.semibold))
+                    .foregroundStyle(AppColors.ink)
+                    .lineLimit(1)
+                HStack(spacing: 6) {
+                    Text(activity.date)
+                    if let dist = activity.distance {
+                        Text("·")
+                        Text(String(format: "%.1f km", dist))
+                    }
+                    Text("·")
+                    Text(activity.duration)
+                }
+                .font(.system(size: 11))
+                .foregroundStyle(AppColors.inkLight)
+                .lineLimit(1)
+            }
+            Spacer(minLength: 6)
+            if isSelected {
+                Image(systemName: "checkmark.circle.fill")
+                    .foregroundStyle(accent)
+                    .font(.system(size: 18))
+            }
+        }
+        .padding(.vertical, 4)
     }
 }
