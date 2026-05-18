@@ -76,9 +76,18 @@ else
 fi
 
 # ── Physical device install ────────────────────────────────────────────
-# Pick the first connected iPhone (state "connected"). If none, skip.
+# Pick the first connected iPhone (state "connected"). Extract the
+# 36-char UUID from anywhere on the line — "$(NF-1)" doesn't work
+# because the model column has spaces ("iPhone 14 Pro (...)").
 DEV_ID=$("$XCRUN" devicectl list devices 2>/dev/null \
-    | awk '/iPhone/ && /connected/ {print $(NF-1); exit}')
+    | awk '/iPhone/ && /connected/ {
+        for (i = 1; i <= NF; i++) {
+            if ($i ~ /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/) {
+                print $i
+                exit
+            }
+        }
+    }')
 
 if [ -n "${DEV_ID:-}" ]; then
     echo "▶︎ Connected iPhone: $DEV_ID"
