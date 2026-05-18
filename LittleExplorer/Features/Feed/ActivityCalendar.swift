@@ -23,12 +23,20 @@ struct ActivityCalendarView: View {
 
     var body: some View {
         let cells = buildGrid()
-        let cols: [[DayCell]] = (0..<Self.weeksShown).map { w in
+        // Split into weeks first…
+        let allWeeks: [[DayCell]] = (0..<Self.weeksShown).map { w in
             Array(cells[(w * 7)..<((w + 1) * 7)])
         }
+        // …then drop every leading empty week so months with no
+        // activity at all (e.g. January, February for Florian's data)
+        // don't waste space at the start of the heatmap.
+        let firstActiveIdx = allWeeks.firstIndex(where: { week in
+            week.contains(where: { !$0.activities.isEmpty })
+        }) ?? 0
+        let cols: [[DayCell]] = Array(allWeeks[firstActiveIdx...])
 
         VStack(alignment: .leading, spacing: 8) {
-            header
+            header(cols: cols)
             grid(cols: cols)
             if let idx = hoverIndex, idx < cells.count {
                 tooltip(for: cells[idx])
@@ -39,9 +47,22 @@ struct ActivityCalendarView: View {
         .overlay(RoundedRectangle(cornerRadius: 4).stroke(AppColors.creamBorder, lineWidth: 1))
     }
 
-    private var header: some View {
-        HStack {
-            Text("4 DERNIERS MOIS")
+    private func header(cols: [[DayCell]]) -> some View {
+        // Header label adapts to the visible range. "ACTIVITÉ DEPUIS
+        // <month>" reads better than a static "4 DERNIERS MOIS" once
+        // leading empty months get trimmed.
+        let firstDate = cols.first?.first?.date
+        let monthFormatter: DateFormatter = {
+            let f = DateFormatter()
+            f.dateFormat = "MMM yyyy"
+            f.locale = Locale(identifier: "fr_FR")
+            return f
+        }()
+        let label = firstDate.map {
+            "DEPUIS \(monthFormatter.string(from: $0).uppercased())"
+        } ?? "ACTIVITÉ"
+        return HStack {
+            Text(label)
                 .font(.system(size: 9).weight(.semibold))
                 .tracking(1.2)
                 .foregroundStyle(AppColors.terra)
