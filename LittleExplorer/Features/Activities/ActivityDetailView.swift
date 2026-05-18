@@ -185,30 +185,64 @@ struct ActivityDetailView: View {
     //
     // Y axis is shared between two unrelated series (HR bpm + slope %).
     // Swift Charts only supports one Y scale natively, so we map slope
-    // values into HR coordinate space (-25% → hrMin, +25% → hrMax,
+    // values into HR coordinate space (slopeMin → hrMin, slopeMax → hrMax,
     // 0% → midpoint) and re-label the trailing axis with the original
-    // slope percentages. Same trick web's Recharts does with `yAxisId`.
+    // slope percentages. Same trick the web's Recharts does with `yAxisId`.
+    //
+    // hrMin / hrMax are derived from the activity's actual HR range
+    // (rounded to the nearest 10, with a sensible floor/ceiling) so a
+    // chill ride at 90-140 bpm doesn't get crammed into the bottom of
+    // a 120-200 fixed window. Slope domain stays ±25 % regardless so
+    // bars are always proportional to a real gradient scale.
 
-    private static let hrMin: Double = 120
-    private static let hrMax: Double = 200
     private static let slopeMin: Double = -25
     private static let slopeMax: Double = 25
-    private static let slopeBaselineHr: Double = (hrMin + hrMax) / 2
 
-    private static func slopeToHr(_ slope: Double) -> Double {
-        let t = (slope - slopeMin) / (slopeMax - slopeMin)
-        return hrMin + t * (hrMax - hrMin)
+    /// Range of HR values observed in this ride, padded out to the
+    /// nearest 10 bpm so axis labels read nicely. Falls back to a sane
+    /// default when the ride has no HR data.
+    private var hrRange: (min: Double, max: Double) {
+        let values = chartData.compactMap(\.heartRate)
+        guard let lo = values.min(), let hi = values.max(), hi > lo else {
+            return (80, 200)
+        }
+        let pad = max(5.0, (hi - lo) * 0.08)
+        let minBpm = max(40, floor((lo - pad) / 10) * 10)
+        let maxBpm = min(220, ceil((hi + pad) / 10) * 10)
+        return (minBpm, maxBpm)
+    }
+
+    private var hrAxisTicks: [Double] {
+        let r = hrRange
+        let step = (r.max - r.min) / 4
+        return stride(from: r.min, through: r.max, by: step).map { $0 }
+    }
+
+    /// Map a slope % into the chart's HR coordinate space. 0 % slope
+    /// sits at the midpoint of the current HR range so bars are visually
+    /// balanced regardless of the rider's HR window.
+    private func slopeToHr(_ slope: Double) -> Double {
+        let r = hrRange
+        let t = (slope - Self.slopeMin) / (Self.slopeMax - Self.slopeMin)
+        return r.min + t * (r.max - r.min)
+    }
+
+    private var slopeBaselineHr: Double {
+        let r = hrRange
+        return (r.min + r.max) / 2
     }
 
     private var hrSlopeChart: some View {
-        cardWrapper(label: "FRÉQUENCE CARDIAQUE · INCLINAISON") {
+        let range = hrRange
+        let baseline = slopeBaselineHr
+        return cardWrapper(label: "FRÉQUENCE CARDIAQUE · INCLINAISON") {
             Chart {
                 ForEach(chartData) { p in
                     if p.gradientPct != 0 {
-                        let mappedY = Self.slopeToHr(p.gradientPct)
+                        let mappedY = slopeToHr(p.gradientPct)
                         BarMark(
                             x: .value("km", p.distKm),
-                            yStart: .value("base", Self.slopeBaselineHr),
+                            yStart: .value("base", baseline),
                             yEnd: .value("slope", mappedY),
                             width: .fixed(2),
                         )
@@ -249,14 +283,14 @@ struct ActivityDetailView: View {
             }
             .frame(height: 240)
             .chartXScale(domain: 0...maxDistKm)
-            .chartYScale(domain: Self.hrMin...Self.hrMax)
+            .chartYScale(domain: range.min...range.max)
             .chartXSelection(value: $selectedDist)
             .chartXAxis {
                 AxisMarks { _ in AxisValueLabel().font(.system(size: 9)) }
             }
             .chartYAxis {
-                // Leading axis: HR values (bpm).
-                AxisMarks(position: .leading, values: [120, 140, 160, 180, 200]) { value in
+                // Leading axis: HR values (bpm), derived from the ride's data.
+                AxisMarks(position: .leading, values: hrAxisTicks) { value in
                     AxisValueLabel {
                         if let v = value.as(Double.self) {
                             Text("\(Int(v))").font(.system(size: 9))
@@ -264,14 +298,14 @@ struct ActivityDetailView: View {
                     }
                     AxisGridLine().foregroundStyle(AppColors.creamBorder)
                 }
-                // Trailing axis: re-labelled with slope %.
-                AxisMarks(position: .trailing, values: [120, 140, 160, 180, 200]) { value in
+                // Trailing axis: re-label the same ticks with the slope %
+                // each one represents in our linear mapping.
+                AxisMarks(position: .trailing, values: hrAxisTicks) { value in
                     AxisValueLabel {
                         if let hr = value.as(Double.self) {
-                            // Inverse of slopeToHr.
-                            let t = (hr - Self.hrMin) / (Self.hrMax - Self.hrMin)
+                            let t = (hr - range.min) / (range.max - range.min)
                             let slope = Self.slopeMin + t * (Self.slopeMax - Self.slopeMin)
-                            let formatted = slope == 0 ? "0" : String(format: "%+.0f%%", slope)
+                            let formatted = abs(slope) < 0.5 ? "0" : String(format: "%+.0f%%", slope)
                             Text(formatted).font(.system(size: 9))
                         }
                     }
