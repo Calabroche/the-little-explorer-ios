@@ -17,8 +17,17 @@ struct ActivityCalendarView: View {
         let date: Date
         let isoDay: String
         let activities: [RideRecord]
-        let totalTss: Int
+        let totalKm: Double
+        let totalElevationM: Double
+        let totalDurationMin: Int
         let inFuture: Bool
+
+        /// Weighted by total time: km/h = totalKm / totalHours.
+        /// Returns nil when no usable duration is available.
+        var avgSpeedKmh: Double? {
+            guard totalDurationMin > 0, totalKm > 0 else { return nil }
+            return totalKm / (Double(totalDurationMin) / 60)
+        }
     }
 
     var body: some View {
@@ -67,7 +76,7 @@ struct ActivityCalendarView: View {
                 .tracking(1.2)
                 .foregroundStyle(AppColors.terra)
             Rectangle().fill(AppColors.creamBorder).frame(width: 16, height: 1)
-            Text("HEATMAP TSS")
+            Text("DISTANCE PAR JOUR")
                 .font(.system(size: 9).weight(.semibold))
                 .tracking(1.2)
                 .foregroundStyle(AppColors.inkLight)
@@ -157,7 +166,7 @@ struct ActivityCalendarView: View {
     private func cellView(for cell: DayCell) -> some View {
         let bg: Color = cell.inFuture
             ? Color.clear
-            : intensityColor(tss: cell.totalTss, hasActivity: !cell.activities.isEmpty)
+            : intensityColor(km: cell.totalKm, hasActivity: !cell.activities.isEmpty)
         return Rectangle()
             .fill(bg)
             .frame(width: Self.cellSize, height: Self.cellSize)
@@ -177,23 +186,53 @@ struct ActivityCalendarView: View {
             return f
         }()
         let dateLbl = formatter.string(from: cell.date)
-        let text: String
-        if cell.activities.isEmpty {
-            text = "\(dateLbl) — pas d'activité"
-        } else {
-            let km = cell.activities.compactMap { $0.distance }.reduce(0, +)
-            let tss = cell.totalTss
-            let n = cell.activities.count
-            text = n == 1
-                ? "\(dateLbl) — \(Int(km)) km · TSS \(tss)"
-                : "\(dateLbl) — \(n) sorties · \(Int(km)) km · TSS \(tss)"
+
+        return VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 6) {
+                Text(dateLbl.capitalized)
+                    .font(.system(size: 10).weight(.semibold))
+                    .tracking(0.6)
+                    .foregroundStyle(AppColors.ink)
+                if cell.activities.count > 1 {
+                    Text("· \(cell.activities.count) sorties")
+                        .font(.system(size: 10))
+                        .foregroundStyle(AppColors.inkLight)
+                }
+            }
+
+            if cell.activities.isEmpty {
+                Text("Pas d'activité")
+                    .font(.system(size: 10).italic())
+                    .foregroundStyle(AppColors.inkLight)
+            } else {
+                HStack(spacing: 12) {
+                    statChip(label: "KM", value: String(format: "%.1f", cell.totalKm), color: AppColors.terra)
+                    if let speed = cell.avgSpeedKmh {
+                        statChip(label: "MOY", value: String(format: "%.1f km/h", speed), color: AppColors.blue)
+                    }
+                    if cell.totalElevationM > 0 {
+                        statChip(label: "D+", value: "\(Int(cell.totalElevationM)) m", color: AppColors.green)
+                    }
+                }
+            }
         }
-        return Text(text)
-            .font(.system(size: 10))
-            .foregroundStyle(AppColors.inkMid)
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .background(AppColors.creamDark, in: RoundedRectangle(cornerRadius: 3))
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        .background(AppColors.creamDark, in: RoundedRectangle(cornerRadius: 4))
+        .overlay(RoundedRectangle(cornerRadius: 4).stroke(AppColors.creamBorder, lineWidth: 0.5))
+    }
+
+    private func statChip(label: String, value: String, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(label)
+                .font(.system(size: 8).weight(.bold))
+                .tracking(1.0)
+                .foregroundStyle(AppColors.inkLight)
+            Text(value)
+                .font(.system(size: 11, design: .serif).weight(.bold))
+                .foregroundStyle(color)
+                .monospacedDigit()
+        }
     }
 
     // MARK: - Grid construction
@@ -221,24 +260,31 @@ struct ActivityCalendarView: View {
             let day = calendar.date(byAdding: .day, value: i, to: start)!
             let key = RideDate.isoDay(day)
             let acts = byDay[key] ?? []
-            let totalTss = acts.compactMap(\.tss).reduce(0, +)
+            let totalKm = acts.compactMap(\.distance).reduce(0, +)
+            let totalElev = acts.compactMap(\.elevation).reduce(0, +)
+            let totalDur = acts.map(\.durationMin).reduce(0, +)
             cells.append(DayCell(
                 id: i,
                 date: day,
                 isoDay: key,
                 activities: acts,
-                totalTss: totalTss,
+                totalKm: totalKm,
+                totalElevationM: totalElev,
+                totalDurationMin: totalDur,
                 inFuture: day > today,
             ))
         }
         return cells
     }
 
-    private func intensityColor(tss: Int, hasActivity: Bool) -> Color {
+    /// Colour ramps with distance now (matches the new "DISTANCE PAR
+    /// JOUR" header). Bins are cycling-leaning since most of Florian's
+    /// data is bike rides, but still readable for running / walking.
+    private func intensityColor(km: Double, hasActivity: Bool) -> Color {
         guard hasActivity else { return AppColors.heat0 }
-        if tss >= 100 { return AppColors.heat4 }
-        if tss >= 60  { return AppColors.heat3 }
-        if tss >= 30  { return AppColors.heat2 }
+        if km >= 60 { return AppColors.heat4 }
+        if km >= 30 { return AppColors.heat3 }
+        if km >= 15 { return AppColors.heat2 }
         return AppColors.heat1
     }
 }
