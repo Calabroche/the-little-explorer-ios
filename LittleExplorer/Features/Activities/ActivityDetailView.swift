@@ -21,6 +21,12 @@ struct ActivityDetailView: View {
     let activity: RideRecord
 
     @State private var selectedDist: Double?
+    /// Which chart the user last touched. Drives where the scrub card
+    /// is rendered — it sits immediately above the active chart so
+    /// the finger isn't covering its own readout.
+    @State private var activeChart: ChartKind = .hr
+
+    enum ChartKind: Hashable { case hr, speed, power, altitude }
 
     /// chartData was a computed property running PowerStream.build on
     /// every body re-render. During a drag on any chart, body fires
@@ -57,19 +63,22 @@ struct ActivityDetailView: View {
                 topStatsCard
                 if activity.np != nil { ftpCard }
 
-                // Sticky scrub readout — visible only while the user is
-                // dragging on any chart. Updates in real time with the
-                // values at the selected X, so the readout follows the
-                // finger across all four charts.
-                if let s = selectedPoint, hasInteractiveCharts {
-                    scrubCard(point: s)
-                        .transition(.opacity.combined(with: .move(edge: .top)))
+                // Scrub card now rides immediately above the chart the
+                // user last touched. Helper renders it conditionally
+                // for each chart's spot in the stack.
+                if hasHeartRate {
+                    scrubCardSlot(for: .hr)
+                    hrSlopeChart
                 }
-
-                if hasHeartRate { hrSlopeChart }
+                scrubCardSlot(for: .speed)
                 speedChart
-                if hasPower { powerChart }
+                if hasPower {
+                    scrubCardSlot(for: .power)
+                    powerChart
+                }
+                scrubCardSlot(for: .altitude)
                 elevationChart
+
                 if let zones = activity.hrZones { hrZonesCard(zones: zones) }
                 if hasGPS {
                     cardWrapper(label: "CARTE DU TRAJET") {
@@ -82,7 +91,6 @@ struct ActivityDetailView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 16)
-            .animation(.easeOut(duration: 0.15), value: selectedDist != nil)
         }
         .scrollIndicators(.hidden)
         .background(AppColors.cream)
@@ -115,6 +123,31 @@ struct ActivityDetailView: View {
 
     private var hasInteractiveCharts: Bool {
         !chartData.isEmpty
+    }
+
+    /// A near-zero-distance drag gesture used as a fast-path "I'm being
+    /// touched" signal for a chart. We piggyback alongside Swift Charts'
+    /// own .chartXSelection via .simultaneousGesture so the X value is
+    /// still updated normally, while we capture which chart was the
+    /// source of the touch and surface the scrub card right next to it.
+    /// Guard against redundant state writes — onChanged fires ~60 Hz
+    /// during a drag, so only assign when activeChart actually changes.
+    private func activationGesture(for kind: ChartKind) -> some Gesture {
+        DragGesture(minimumDistance: 0)
+            .onChanged { _ in
+                if activeChart != kind { activeChart = kind }
+            }
+    }
+
+    /// Render the scrub card right above the chart the user is touching.
+    /// Returns an empty view for the other three slots so the layout
+    /// only has one card at a time.
+    @ViewBuilder
+    private func scrubCardSlot(for kind: ChartKind) -> some View {
+        if activeChart == kind, hasInteractiveCharts, let s = selectedPoint {
+            scrubCard(point: s)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+        }
     }
 
     /// Sticky readout card that surfaces every meaningful value at the
@@ -406,6 +439,7 @@ struct ActivityDetailView: View {
             .chartXScale(domain: 0...maxDistKm)
             .chartYScale(domain: range.min...range.max)
             .chartXSelection(value: $selectedDist)
+            .simultaneousGesture(activationGesture(for: .hr))
             .chartXAxis {
                 AxisMarks { _ in AxisValueLabel().font(.system(size: 9)) }
             }
@@ -480,6 +514,7 @@ struct ActivityDetailView: View {
             .frame(height: 200)
             .chartXScale(domain: 0...maxDistKm)
             .chartXSelection(value: $selectedDist)
+            .simultaneousGesture(activationGesture(for: .speed))
             .chartXAxis { AxisMarks { _ in AxisValueLabel().font(.system(size: 9)) } }
             .chartYAxis {
                 AxisMarks(position: .leading) { _ in
@@ -529,6 +564,7 @@ struct ActivityDetailView: View {
             .frame(height: 200)
             .chartXScale(domain: 0...maxDistKm)
             .chartXSelection(value: $selectedDist)
+            .simultaneousGesture(activationGesture(for: .power))
             .chartXAxis { AxisMarks { _ in AxisValueLabel().font(.system(size: 9)) } }
             .chartYAxis {
                 AxisMarks(position: .leading) { _ in
@@ -583,6 +619,7 @@ struct ActivityDetailView: View {
             .frame(height: 180)
             .chartXScale(domain: 0...maxDistKm)
             .chartXSelection(value: $selectedDist)
+            .simultaneousGesture(activationGesture(for: .altitude))
             .chartXAxis { AxisMarks { _ in AxisValueLabel().font(.system(size: 9)) } }
             .chartYAxis {
                 AxisMarks(position: .leading) { _ in

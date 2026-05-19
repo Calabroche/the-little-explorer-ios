@@ -13,6 +13,13 @@ import Observation
 /// Both are merged here and exposed through the same `activities`
 /// surface so every consumer (Feed cards, heatmap, FTP, Compare,
 /// Wrapped, etc.) sees a single unified list.
+///
+/// Heavy derivations (sorting by rawDate, filtering by sport, deriving
+/// the available-sports list) are cached internally and invalidated
+/// only when the underlying activity arrays change. Without that
+/// cache, the Feed re-sorts 50 activities and re-parses ~250 ISO
+/// dates on every body re-render — which adds up to noticeable
+/// latency on taps and sport switches.
 @Observable
 final class ActivityStore {
     enum LoadState: Equatable {
@@ -30,27 +37,59 @@ final class ActivityStore {
     private let api: APIClient
     private let localStore: LocalRideStore?
 
+    // Caches — @ObservationIgnored so SwiftUI doesn't track reads on
+    // them. They're populated lazily on first access and rebuilt only
+    // when invalidateCache() runs.
+    @ObservationIgnored private var cachedSorted: [RideRecord]?
+    @ObservationIgnored private var cachedFiltered: [Sport: [RideRecord]] = [:]
+    @ObservationIgnored private var cachedAvailableSports: [Sport]?
+
     init(api: APIClient = .shared, localStore: LocalRideStore? = nil) {
         self.api = api
         self.localStore = localStore
     }
 
     /// All activities (API + local), sorted by rawDate (most recent
-    /// first). Computed on demand so updates to either source surface
-    /// immediately.
+    /// first). The actual sort runs once per dataset, not per body.
     var activities: [RideRecord] {
-        (apiActivities + localActivities).sorted { lhs, rhs in
+        if let cached = cachedSorted { return cached }
+        let merged = apiActivities + localActivities
+        let result = merged.sorted { lhs, rhs in
             let l = RideDate.parse(lhs.rawDate) ?? .distantPast
             let r = RideDate.parse(rhs.rawDate) ?? .distantPast
             return l > r
         }
+        cachedSorted = result
+        return result
+    }
+
+    /// Activities filtered to a single sport, sorted most-recent first.
+    /// Memoised per-sport so flipping between Vélo / Course / Rando
+    /// doesn't re-scan + re-sort the full activity list each time.
+    func filtered(by sport: Sport) -> [RideRecord] {
+        if let cached = cachedFiltered[sport] { return cached }
+        let result = activities.filtered(by: sport)
+        cachedFiltered[sport] = result
+        return result
+    }
+
+    /// Distinct sports present in the data, in canonical order. Used
+    /// by every sport-picker chip bar.
+    var availableSports: [Sport] {
+        if let cached = cachedAvailableSports { return cached }
+        let result = activities.availableSports
+        cachedAvailableSports = result
+        return result
     }
 
     func load(user: AppUser, force: Bool = false) async {
         if !force, loadedFor == user, state == .loaded {
             // Pick up newly-saved local rides without forcing a
             // network refetch.
-            if let localStore { localActivities = localStore.rides(for: user) }
+            if let localStore {
+                localActivities = localStore.rides(for: user)
+                invalidateCache()
+            }
             return
         }
         state = .loading
@@ -58,6 +97,7 @@ final class ActivityStore {
             apiActivities = try await api.activities(user: user)
             if let localStore { localActivities = localStore.rides(for: user) }
             loadedFor = user
+            invalidateCache()
             state = .loaded
         } catch {
             state = .failed(error.localizedDescription)
@@ -70,10 +110,12 @@ final class ActivityStore {
     func refreshLocal(user: AppUser) {
         guard let localStore else { return }
         localActivities = localStore.rides(for: user)
+        invalidateCache()
     }
 
-    /// Activities filtered to a single sport, sorted most-recent first.
-    func filtered(by sport: Sport) -> [RideRecord] {
-        activities.filtered(by: sport)
+    private func invalidateCache() {
+        cachedSorted = nil
+        cachedFiltered.removeAll()
+        cachedAvailableSports = nil
     }
 }
