@@ -41,6 +41,16 @@ struct ActivityDetailView: View {
                 header
                 topStatsCard
                 if activity.np != nil { ftpCard }
+
+                // Sticky scrub readout — visible only while the user is
+                // dragging on any chart. Updates in real time with the
+                // values at the selected X, so the readout follows the
+                // finger across all four charts.
+                if let s = selectedPoint, hasInteractiveCharts {
+                    scrubCard(point: s)
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                }
+
                 if hasHeartRate { hrSlopeChart }
                 speedChart
                 if hasPower { powerChart }
@@ -57,6 +67,7 @@ struct ActivityDetailView: View {
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 16)
+            .animation(.easeOut(duration: 0.15), value: selectedDist != nil)
         }
         .scrollIndicators(.hidden)
         .background(AppColors.cream)
@@ -67,6 +78,83 @@ struct ActivityDetailView: View {
             }
         }
         .toolbarTitleDisplayMode(.inline)
+        .onChange(of: selectedDist) { _, newValue in
+            if newValue != nil {
+                // Light haptic tick on every snap to a new sample — the
+                // user feels the chart "register" each touch.
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            }
+        }
+    }
+
+    private var hasInteractiveCharts: Bool {
+        !chartData.isEmpty
+    }
+
+    /// Sticky readout card that surfaces every meaningful value at the
+    /// currently-dragged X position. Replaces the per-chart annotation
+    /// tooltips with one always-visible card above the chart stack, so
+    /// the user gets a coherent multi-metric snapshot no matter which
+    /// chart their finger is on.
+    private func scrubCard(point: ChartPoint) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(String(format: "%.2f", point.distKm))
+                    .font(.system(size: 28, design: .serif).weight(.heavy))
+                    .foregroundStyle(AppColors.ink)
+                    .monospacedDigit()
+                Text("km")
+                    .font(.system(size: 13))
+                    .foregroundStyle(AppColors.inkLight)
+                Spacer()
+                let signed = point.gradientPct >= 0
+                    ? String(format: "+%.1f %%", point.gradientPct)
+                    : String(format: "%.1f %%", point.gradientPct)
+                Text(signed)
+                    .font(.system(size: 12, design: .serif).weight(.bold))
+                    .foregroundStyle(point.gradientPct >= 0 ? AppColors.terra : AppColors.blue)
+                    .monospacedDigit()
+            }
+
+            LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading),
+                                GridItem(.flexible(), alignment: .leading),
+                                GridItem(.flexible(), alignment: .leading)], spacing: 8) {
+                if let hr = point.heartRate {
+                    scrubStat(label: "FC", value: "\(Int(hr.rounded()))", unit: "bpm", color: AppColors.terra)
+                }
+                if let speed = point.speedKmh {
+                    scrubStat(label: "VITESSE", value: String(format: "%.1f", speed), unit: "km/h", color: AppColors.blue)
+                }
+                if point.power > 0 {
+                    scrubStat(label: "PUISSANCE", value: "\(point.power)", unit: "W", color: AppColors.green)
+                }
+                if let alt = point.altitude {
+                    scrubStat(label: "ALTITUDE", value: "\(Int(alt.rounded()))", unit: "m", color: AppColors.terra)
+                }
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(AppColors.terra.opacity(0.5), lineWidth: 1.5))
+    }
+
+    private func scrubStat(label: String, value: String, unit: String, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label)
+                .font(.system(size: 9).weight(.bold))
+                .tracking(1.2)
+                .foregroundStyle(AppColors.inkLight)
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(value)
+                    .font(.system(size: 18, design: .serif).weight(.heavy))
+                    .foregroundStyle(color)
+                    .monospacedDigit()
+                Text(unit)
+                    .font(.system(size: 10))
+                    .foregroundStyle(AppColors.inkLight)
+            }
+        }
     }
 
     // MARK: - Header
@@ -265,8 +353,8 @@ struct ActivityDetailView: View {
                 }
                 if let s = selectedPoint {
                     RuleMark(x: .value("km", s.distKm))
-                        .foregroundStyle(AppColors.ink.opacity(0.5))
-                        .lineStyle(StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                        .foregroundStyle(AppColors.terra.opacity(0.75))
+                        .lineStyle(StrokeStyle(lineWidth: 1.5))
                     if let hr = s.heartRate {
                         PointMark(x: .value("km", s.distKm), y: .value("FC", hr))
                             .foregroundStyle(AppColors.terra)
