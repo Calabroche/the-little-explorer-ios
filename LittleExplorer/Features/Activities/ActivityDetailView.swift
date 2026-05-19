@@ -22,7 +22,22 @@ struct ActivityDetailView: View {
 
     @State private var selectedDist: Double?
 
-    private var chartData: [ChartPoint] { PowerStream.build(from: activity) }
+    /// chartData was a computed property running PowerStream.build on
+    /// every body re-render. During a drag on any chart, body fires
+    /// 60+ times per second, so we ended up recomputing the gradient
+    /// + power model thousands of times per second of interaction —
+    /// hence the multi-second lag Florian reported. Cached now and
+    /// (re)computed exactly once when the view first appears.
+    @State private var chartData: [ChartPoint] = []
+
+    /// HR Y-axis bounds depend on chartData, so we cache them too.
+    /// Recomputed in the same onAppear pass after chartData is ready.
+    @State private var cachedHrRange: (min: Double, max: Double) = (80, 200)
+
+    /// Cached + pre-warmed haptic generator so each selection snap
+    /// fires in <1ms instead of allocating a new generator each time.
+    @State private var haptics = UIImpactFeedbackGenerator(style: .light)
+
     private var hasHeartRate: Bool { (activity.heartrate?.count ?? 0) > 10 }
     private var hasPower: Bool { chartData.contains(where: { $0.power > 0 }) }
     private var hasGPS: Bool { activity.gps.count > 1 }
@@ -78,11 +93,22 @@ struct ActivityDetailView: View {
             }
         }
         .toolbarTitleDisplayMode(.inline)
+        .onAppear {
+            // Build chartData + derive hrRange once. This is the heavy
+            // PowerStream pipeline (gradient + power model on the raw
+            // 1Hz streams), and before this cache it was re-running on
+            // every frame of a chart drag.
+            if chartData.isEmpty {
+                chartData = PowerStream.build(from: activity)
+                cachedHrRange = computeHrRange()
+            }
+            // Pre-warm the haptic engine so the first tick has zero
+            // perceptible latency.
+            haptics.prepare()
+        }
         .onChange(of: selectedDist) { _, newValue in
             if newValue != nil {
-                // Light haptic tick on every snap to a new sample — the
-                // user feels the chart "register" each touch.
-                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                haptics.impactOccurred()
             }
         }
     }
@@ -287,9 +313,16 @@ struct ActivityDetailView: View {
     private static let slopeMax: Double = 25
 
     /// Range of HR values observed in this ride, padded out to the
-    /// nearest 10 bpm so axis labels read nicely. Falls back to a sane
-    /// default when the ride has no HR data.
+    /// nearest 10 bpm so axis labels read nicely. Returns the cached
+    /// value computed once in onAppear so we never scan chartData on
+    /// the drag hot path.
     private var hrRange: (min: Double, max: Double) {
+        cachedHrRange
+    }
+
+    /// Computed once after chartData is built. Mirrors the previous
+    /// inline logic but uses the cached chartData reference.
+    private func computeHrRange() -> (min: Double, max: Double) {
         let values = chartData.compactMap(\.heartRate)
         guard let lo = values.min(), let hi = values.max(), hi > lo else {
             return (80, 200)
