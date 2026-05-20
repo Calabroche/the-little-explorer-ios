@@ -12,10 +12,15 @@ import SwiftUI
 /// guarantees the image stays in sync if Florian swaps it later on
 /// the web.
 struct LoginView: View {
-    @Environment(SessionStore.self) private var session
+    // SessionStore isn't injected directly into the environment; it
+    // lives on AppEnvironment.session. Read the env object and reach
+    // through it — keeps the dependency graph flat.
+    @Environment(AppEnvironment.self) private var environment
     @State private var auth = AuthService()
     @State private var busy: String? = nil
     @State private var error: String? = nil
+
+    private var session: SessionStore { environment.session }
 
     private let heroURL = URL(string: "https://the-little-explorer-app.vercel.app/login-forest.avif")!
 
@@ -179,5 +184,5 @@ struct LoginView: View {
 
 #Preview {
     LoginView()
-        .environment(SessionStore())
+        .environment(AppEnvironment())
 }
