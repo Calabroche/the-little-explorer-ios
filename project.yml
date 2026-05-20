@@ -80,6 +80,13 @@ targets:
         # ActivityKit
         NSSupportsLiveActivities: true
         NSSupportsLiveActivitiesFrequentUpdates: true
+        # Custom URL scheme `littleexplorer://` — used by
+        # ASWebAuthenticationSession to capture the OAuth callback
+        # from /auth/native-done on the web app.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.calabrese.little-explorer-ios
+            CFBundleURLSchemes:
+              - littleexplorer
     dependencies:
       - target: LittleExplorerLiveActivity
       - target: LittleExplorerWatch

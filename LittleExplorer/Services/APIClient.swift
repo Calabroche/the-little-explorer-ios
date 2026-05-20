@@ -5,6 +5,7 @@ enum APIError: Error, LocalizedError {
     case http(Int)
     case decoding(Error)
     case transport(Error)
+    case unauthorized   // 401 — token missing/expired/revoked
 
     var errorDescription: String? {
         switch self {
@@ -12,6 +13,7 @@ enum APIError: Error, LocalizedError {
         case .http(let code): return "Server returned \(code)"
         case .decoding(let err): return "Decoding error: \(err.localizedDescription)"
         case .transport(let err): return "Network error: \(err.localizedDescription)"
+        case .unauthorized: return "Session expirée — reconnecte-toi."
         }
     }
 }
@@ -25,16 +27,46 @@ actor APIClient {
     private let session: URLSession
     private let decoder: JSONDecoder
 
+    /// Bearer token issued by /auth/native-done after the user signed
+    /// in via the web's Google or Strava OAuth flow. Set by
+    /// AppEnvironment whenever SessionStore.token changes; sent as
+    /// `Authorization: Bearer …` on every authenticated request.
+    private var authToken: String?
+
     init(session: URLSession = .shared) {
         self.session = session
         self.decoder = JSONDecoder()
     }
 
+    func setAuthToken(_ token: String?) {
+        self.authToken = token
+    }
+
     // MARK: - Activities
 
-    func activities(user: AppUser) async throws -> [RideRecord] {
-        try await get("/api/activities", query: ["user": user.rawValue])
+    /// Lists the signed-in user's activities. The `user:` parameter is
+    /// kept for backward compat with older call sites but is ignored
+    /// by the server — user is derived from the bearer token.
+    func activities(user: AppUser? = nil) async throws -> [RideRecord] {
+        _ = user // legacy
+        return try await get("/api/activities")
     }
+
+    // MARK: - Profile (/api/me)
+
+    func me() async throws -> MeProfile {
+        try await get("/api/me")
+    }
+
+    // MARK: - Strava manual sync
+
+    @discardableResult
+    func syncStrava() async throws -> SyncResult {
+        try await post("/api/strava/sync", body: EmptyBody())
+    }
+
+    struct SyncResult: Decodable, Sendable { let ok: Bool; let count: Int? }
+    private struct EmptyBody: Encodable {}
 
     // MARK: - BAN address search / reverse geocode
 
@@ -105,15 +137,26 @@ actor APIClient {
     }
 
     private func execute<T: Decodable>(_ request: URLRequest) async throws -> T {
+        var req = request
+        if let token = authToken {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
         let data: Data
         let response: URLResponse
         do {
-            (data, response) = try await session.data(for: request)
+            (data, response) = try await session.data(for: req)
         } catch {
             throw APIError.transport(error)
         }
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            throw APIError.http(http.statusCode)
+        if let http = response as? HTTPURLResponse {
+            if http.statusCode == 401 {
+                // Token expired or revoked — surface a distinct error
+                // so the RootView can sign out and bounce to LoginView.
+                throw APIError.unauthorized
+            }
+            if !(200..<300).contains(http.statusCode) {
+                throw APIError.http(http.statusCode)
+            }
         }
         do {
             return try decoder.decode(T.self, from: data)

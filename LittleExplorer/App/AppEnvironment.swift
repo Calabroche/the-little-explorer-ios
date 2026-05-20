@@ -15,9 +15,14 @@ final class AppEnvironment {
     let localRides: LocalRideStore
     let activityStore: ActivityStore
 
+    /// Bearer-token session, lazy-loaded from Keychain on init. RootView
+    /// reads this to decide LoginView vs the tab bar.
+    let session: SessionStore
+
     init() {
         let localRides = LocalRideStore()
         self.localRides = localRides
         self.activityStore = ActivityStore(localStore: localRides)
+        self.session = SessionStore()
     }
 }

@@ -7,9 +7,24 @@ struct ProfileView: View {
         @Bindable var env = environment
         NavigationStack {
             Form {
-                Section("Profil") {
-                    Picker("Utilisateur", selection: $env.currentUser) {
-                        ForEach(AppUser.allCases) { Text($0.displayName).tag($0) }
+                // Authenticated user info comes from /api/me after sign-in.
+                // The legacy "Utilisateur" picker (Florian/Helena) is gone —
+                // multi-user means each session sees only their own data.
+                Section("Compte") {
+                    if let p = env.session.profile {
+                        LabeledContent("Nom", value: p.name ?? "—")
+                        LabeledContent("Email", value: p.email ?? "—")
+                        if let athleteId = p.athleteId {
+                            LabeledContent("Strava athlete", value: String(athleteId))
+                        }
+                    } else {
+                        Text("Chargement du profil…")
+                            .foregroundStyle(.secondary)
+                    }
+                    Button(role: .destructive) {
+                        env.session.clear()
+                    } label: {
+                        Text("Se déconnecter")
                     }
                 }
 
