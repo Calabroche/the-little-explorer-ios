@@ -11,16 +11,58 @@ struct FeedView: View {
         @Bindable var env = environment
         NavigationStack {
             VStack(spacing: 0) {
-                BrandHeader(currentUser: $env.currentUser)
+                BrandHeader()
                 content(env: env)
             }
             .background(AppColors.cream)
             .toolbar(.hidden, for: .navigationBar)
-            .task { await env.activityStore.load(user: env.currentUser) }
-            .refreshable { await env.activityStore.load(user: env.currentUser, force: true) }
-            .onChange(of: env.currentUser) { _, newUser in
-                Task { await env.activityStore.load(user: newUser) }
+            .task {
+                await env.activityStore.load(user: env.currentUser)
+                await Self.backgroundSyncStravaIfEmpty(env: env)
             }
+            .refreshable {
+                // Pull-to-refresh is an explicit user gesture — always
+                // try syncing whether the feed is empty or not. Sync
+                // first so any newly-added rows are picked up by the
+                // subsequent reload, otherwise the user would see the
+                // pre-sync state and have to refresh twice.
+                await Self.backgroundSyncStrava(env: env)
+                await env.activityStore.load(user: env.currentUser, force: true)
+            }
+            .onChange(of: env.currentUser) { _, newUser in
+                Task {
+                    await env.activityStore.load(user: newUser)
+                    await Self.backgroundSyncStravaIfEmpty(env: env)
+                }
+            }
+        }
+    }
+
+    /// Only auto-sync when the feed is empty — matches the web's
+    /// autoSync useEffect in ExplorerApp.tsx. Covers the "new user
+    /// just connected Strava, the cron hasn't run yet" path without
+    /// hitting `/api/strava/sync` on every Feed appearance (which
+    /// historically clobbered streams via an upsert bug).
+    static func backgroundSyncStravaIfEmpty(env: AppEnvironment) async {
+        guard env.activityStore.activities.isEmpty else { return }
+        await backgroundSyncStrava(env: env)
+    }
+
+    /// Fire-and-forget Strava sync. Pulls anything newer from Strava
+    /// into Supabase server-side; if the server reports new rows,
+    /// force-reload activities so the heatmap / cards / records pick
+    /// them up without the user having to tap "Re-syncer Strava"
+    /// manually. Silent on failure — sync is best-effort.
+    static func backgroundSyncStrava(env: AppEnvironment) async {
+        do {
+            let result = try await env.api.syncStrava()
+            if result.ok, (result.count ?? 0) > 0 {
+                await env.activityStore.load(user: env.currentUser, force: true)
+            }
+        } catch {
+            #if DEBUG
+            print("[backgroundSyncStrava] skipped: \(error.localizedDescription)")
+            #endif
         }
     }
 
@@ -61,16 +103,12 @@ struct BrandLockup: View {
     }
 }
 
-/// Top header shown on the welcome screens — full brand wordmark on
-/// the left and a user pill on the right. Replaces the navigation
-/// toolbar slots so the iOS 26 toolbar pill chrome doesn't truncate
-/// either piece.
-///
-/// The brand wordmark is tappable: it routes the user back to the
-/// Activités tab and scrolls that tab to the very top, no matter
-/// where they tapped from.
+/// Top header shown on the welcome screens — brand wordmark on the
+/// left and a read-only signed-in user pill on the right (taps route
+/// to the Profil tab). The legacy Florian/Helena picker is gone —
+/// multi-user auth means each session sees only their own data.
 struct BrandHeader: View {
-    @Binding var currentUser: AppUser
+    @Environment(AppEnvironment.self) private var environment
     @Environment(AppRouter.self) private var router
 
     var body: some View {
@@ -84,7 +122,9 @@ struct BrandHeader: View {
             .accessibilityLabel("Retour aux activités")
 
             Spacer(minLength: 12)
-            UserPill(currentUser: $currentUser)
+            SignedInUserPill(profile: environment.session.profile) {
+                router.selectedTab = .profile
+            }
         }
         .padding(.horizontal, 16)
         .padding(.top, 4)
@@ -92,41 +132,38 @@ struct BrandHeader: View {
     }
 }
 
-/// Full-width-as-needed user picker pill. Shows the SF Symbol icon +
-/// the full display name (so users see "Florian" / "Helena" plain).
-struct UserPill: View {
-    @Binding var currentUser: AppUser
+/// Compact pill showing the signed-in user's display name. Tap to
+/// jump to the Profil tab.
+struct SignedInUserPill: View {
+    let profile: MeProfile?
+    let onTap: () -> Void
 
     var body: some View {
-        Menu {
-            ForEach(AppUser.allCases) { user in
-                Button {
-                    currentUser = user
-                } label: {
-                    if user == currentUser {
-                        Label(user.displayName, systemImage: "checkmark")
-                    } else {
-                        Text(user.displayName)
-                    }
-                }
-            }
-        } label: {
+        Button(action: onTap) {
             HStack(spacing: 8) {
                 Image(systemName: "person.crop.circle.fill")
                     .font(.system(size: 18))
                     .foregroundStyle(AppColors.terra)
-                Text(currentUser.displayName)
+                Text(displayName)
                     .font(.system(size: 13, design: .serif).weight(.bold))
                     .foregroundStyle(AppColors.ink)
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 9).weight(.bold))
-                    .foregroundStyle(AppColors.inkLight)
+                    .lineLimit(1)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
             .background(AppColors.surface, in: Capsule())
             .overlay(Capsule().stroke(AppColors.creamBorder, lineWidth: 1))
         }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Profil")
+    }
+
+    private var displayName: String {
+        if let name = profile?.name, !name.isEmpty { return name }
+        if let email = profile?.email, !email.isEmpty {
+            return email.split(separator: "@").first.map(String.init) ?? email
+        }
+        return "Compte"
     }
 }
 
@@ -158,15 +195,15 @@ private struct FeedScrollView: View {
                     headline(activities: filtered)
                         .padding(.horizontal, 16)
 
-                    if env.selectedSport == .cycling {
-                        TrainingProgramView(activities: filtered).padding(.horizontal, 16)
-                    }
+                    Last5StatsView(activities: filtered).padding(.horizontal, 16)
                     ActivityCalendarView(activities: filtered).padding(.horizontal, 16)
                     PersonalRecordsView(activities: filtered, sport: env.selectedSport).padding(.horizontal, 16)
                     if env.selectedSport == .running {
                         RunPaceZonesView(activities: filtered).padding(.horizontal, 16)
                     }
-                    Last5StatsView(activities: filtered).padding(.horizontal, 16)
+                    if env.selectedSport == .cycling {
+                        TrainingProgramView(activities: filtered).padding(.horizontal, 16)
+                    }
 
                     Divider().padding(.horizontal, 16)
 

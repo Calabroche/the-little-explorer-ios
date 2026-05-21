@@ -17,7 +17,7 @@ struct WrappedView: View {
     private static let montBlanc: Double = 4810
 
     var body: some View {
-        let activities = environment.activityStore.activities
+        let activities = environment.activityStore.filtered(by: environment.selectedSport)
         let availableYears = availableYears(activities: activities)
 
         Group {

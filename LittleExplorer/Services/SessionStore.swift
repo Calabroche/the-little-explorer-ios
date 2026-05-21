@@ -30,11 +30,15 @@ final class SessionStore {
 
     private let service = "com.calabrese.little-explorer-ios.token"
     private let account = "default"
+    private let userDefaultsKey = "tle.session.token.v1"
 
     init() {
         // Lazy-load the token on init so RootView can decide what to
-        // render at app launch without an async hop.
-        if let stored = readKeychain() {
+        // render at app launch without an async hop. Try keychain first;
+        // if it's empty (e.g. simulator wiped the access-group binding
+        // on a fresh build), fall back to UserDefaults which survives
+        // any in-place reinstall.
+        if let stored = readKeychain() ?? readUserDefaults() {
             Task { @MainActor in
                 self.token = stored
             }
@@ -44,12 +48,14 @@ final class SessionStore {
     @MainActor
     func setToken(_ value: String) {
         writeKeychain(value)
+        writeUserDefaults(value)
         token = value
     }
 
     @MainActor
     func clear() {
         deleteKeychain()
+        deleteUserDefaults()
         token = nil
         profile = nil
     }
@@ -92,6 +98,26 @@ final class SessionStore {
     private func deleteKeychain() {
         SecItemDelete(baseQuery() as CFDictionary)
     }
+
+    // MARK: - UserDefaults fallback
+    //
+    // Mirrors the token in UserDefaults so it survives the simulator's
+    // keychain weirdness (unsigned builds can land in a different access
+    // group than the previous install, orphaning keychain items even
+    // though the .db file persists). On signed device builds the keychain
+    // works correctly and this is just a redundant write.
+
+    private func writeUserDefaults(_ value: String) {
+        UserDefaults.standard.set(value, forKey: userDefaultsKey)
+    }
+
+    private func readUserDefaults() -> String? {
+        UserDefaults.standard.string(forKey: userDefaultsKey)
+    }
+
+    private func deleteUserDefaults() {
+        UserDefaults.standard.removeObject(forKey: userDefaultsKey)
+    }
 }
 
 /// What `/api/me` returns. Stays in sync with the web's MeResponse type.
@@ -100,11 +126,26 @@ struct MeProfile: Codable, Sendable {
     let email:      String?
     let name:       String?
     let athleteId:  Int?
+    /// Stored overrides — null fields mean "use defaults" from the
+    /// effective fallback ladder (db override → legacy → default).
+    let settings:   StoredSettings?
     let effective:  EffectiveProfile
 
     struct EffectiveProfile: Codable, Sendable {
         let riderKg:   Double
         let bikeKg:    Double
         let customFtp: Int?
+    }
+
+    struct StoredSettings: Codable, Sendable {
+        let riderKg:   Double?
+        let bikeKg:    Double?
+        let customFtp: Int?
+
+        enum CodingKeys: String, CodingKey {
+            case riderKg   = "rider_kg"
+            case bikeKg    = "bike_kg"
+            case customFtp = "custom_ftp"
+        }
     }
 }

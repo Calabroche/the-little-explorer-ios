@@ -11,12 +11,9 @@ struct AnalyticsHubView: View {
         @Bindable var env = environment
         NavigationStack {
             VStack(spacing: 0) {
-                BrandHeader(currentUser: $env.currentUser)
+                BrandHeader()
                 List {
                     Section("Données") {
-                        NavigationLink(value: AnalyticsRoute.stats) {
-                            row(symbol: "chart.bar.fill", title: "Statistiques", subtitle: "Distance & dénivelé par sport, mois", color: AppColors.terra)
-                        }
                         NavigationLink(value: AnalyticsRoute.map) {
                             row(symbol: "map.fill", title: "Carte des parcours", subtitle: "Toutes les sorties superposées", color: AppColors.green)
                         }
@@ -43,7 +40,6 @@ struct AnalyticsHubView: View {
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: AnalyticsRoute.self) { route in
                 switch route {
-                case .stats:    StatsView()
                 case .map:      AllRoutesMapView()
                 case .photos:   PhotosView()
                 case .ftp:      FtpView()
@@ -82,5 +78,5 @@ struct AnalyticsHubView: View {
 }
 
 enum AnalyticsRoute: Hashable {
-    case stats, map, photos, ftp, compare, wrapped
+    case map, photos, ftp, compare, wrapped
 }
