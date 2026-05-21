@@ -49,28 +49,34 @@ final class NavigateState {
     }
 
     func start(itinerary: Itinerary) async {
+        Log.nav.notice("start: \(itinerary.waypoints.count) waypoints, loop=\(itinerary.loop)")
         phase = .loading
         location.requestAuthorization()
 
-        // Grab the user's current location BEFORE asking the routing
-        // service. If we have a fix that's recent enough we prepend it
-        // as the first waypoint — that way "Naviguer" always plots a
-        // route from where you actually are rather than from the saved
-        // start point of the itinerary. If we don't have a fix yet (the
-        // permission dialog just appeared, for example) we fall back to
-        // the saved waypoints.
-        let here = await waitForFreshLocation(maxWait: 4)
+        // If we already have a recent cached location, prepend it so
+        // the route starts from where the user IS, not from the saved
+        // first waypoint. Don't spin up a second tracking stream to
+        // wait for one — that races with the main tracking stream we
+        // start below and was crashing the app. A few minutes of
+        // tolerance on the cache is plenty: if there's no recent fix
+        // we just route from the saved waypoints and the GPS will
+        // catch up once tracking starts.
+        let here = currentLocationIfFresh()
 
         do {
             var coords = itinerary.waypoints.map(\.coordinate)
             if let here {
                 coords.insert(Coordinate(lat: here.coordinate.latitude, lng: here.coordinate.longitude), at: 0)
+                Log.nav.notice("prepended current location to route")
             }
             if itinerary.loop, let first = coords.first { coords.append(first) }
+            Log.nav.notice("requesting bike route, \(coords.count) coords")
             let fresh = try await api.bikeRoute(waypoints: coords, steps: true)
+            Log.nav.notice("route ready: \(Int(fresh.distance)) m, \(fresh.steps?.count ?? 0) steps")
             self.route = fresh
             phase = .ready
         } catch {
+            Log.nav.error("route failed: \(error.localizedDescription, privacy: .public)")
             phase = .failed(error.localizedDescription)
             return
         }
@@ -85,32 +91,17 @@ final class NavigateState {
         }
     }
 
-    /// Returns a CLLocation that's either already cached (when fresh
-    /// enough) or one captured within `maxWait` seconds via a transient
-    /// listener. Nil if no fix arrives in time — caller falls back to
-    /// the saved itinerary start point.
-    private func waitForFreshLocation(maxWait: Double) async -> CLLocation? {
-        if let cached = location.lastLocation, abs(cached.timestamp.timeIntervalSinceNow) < 30 {
-            return cached
-        }
-        // Single-shot wait: subscribe to the next emission, but cap the
-        // wait so a missing fix doesn't block the whole nav start.
-        return await withTaskGroup(of: CLLocation?.self) { group in
-            group.addTask {
-                for await loc in self.location.startTracking() {
-                    self.location.stopTracking()
-                    return loc
-                }
-                return nil
-            }
-            group.addTask {
-                try? await Task.sleep(for: .seconds(maxWait))
-                return nil
-            }
-            let first = await group.next() ?? nil
-            group.cancelAll()
-            return first
-        }
+    /// Returns the most recently cached CLLocation if it's recent
+    /// enough to be useful as a starting point. Doesn't trigger any
+    /// CoreLocation activity — purely a read of `LocationManager.lastLocation`.
+    private func currentLocationIfFresh() -> CLLocation? {
+        guard let cached = location.lastLocation else { return nil }
+        // 5 minutes is generous but safe — at this resolution the
+        // "where am I now" question is answered well enough for the
+        // first leg, and the user's real GPS will refine it within
+        // a few seconds of tracking.
+        if abs(cached.timestamp.timeIntervalSinceNow) > 300 { return nil }
+        return cached
     }
 
     func stop() {
