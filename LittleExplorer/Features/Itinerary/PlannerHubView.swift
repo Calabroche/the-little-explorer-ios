@@ -74,56 +74,18 @@ struct PlannerHubView: View {
         case .itineraire:
             ItineraryView()
         case .plan:
-            PlannerComingSoonView(
-                tab: .plan,
-                title: "Plan d'entraînement",
-                blurb: "Génère un plan hebdo de sorties à partir de tes objectifs et de ta FTP.",
-            )
+            NavigationStack {
+                TrainingPlanView()
+            }
         case .auto:
-            PlannerComingSoonView(
-                tab: .auto,
-                title: "Itinéraire automatique",
-                blurb: "Donne une distance et un D+ cible — on construit la boucle pour toi.",
-            )
+            NavigationStack {
+                RouteBuilderView()
+            }
         case .proposals:
-            PlannerComingSoonView(
-                tab: .proposals,
-                title: "Suggestions",
-                blurb: "Parcours suggérés selon ta forme du jour et la météo.",
-            )
+            NavigationStack {
+                RouteProposalsView()
+            }
         }
     }
 }
 
-private struct PlannerComingSoonView: View {
-    let tab: PlannerHubView.Tab
-    let title: String
-    let blurb: String
-
-    var body: some View {
-        VStack(spacing: 16) {
-            Spacer()
-            Image(systemName: tab.symbol)
-                .font(.system(size: 48))
-                .foregroundStyle(AppColors.terra)
-            Text(title)
-                .font(.system(.title2, design: .serif).weight(.heavy))
-                .foregroundStyle(AppColors.ink)
-            Text(blurb)
-                .font(.system(.callout, design: .serif))
-                .foregroundStyle(AppColors.inkMid)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
-            Text("Bientôt disponible")
-                .font(.system(size: 11).weight(.bold))
-                .tracking(1.2)
-                .foregroundStyle(AppColors.terra)
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
-                .background(AppColors.terraLight, in: Capsule())
-            Spacer()
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(AppColors.cream)
-    }
-}
