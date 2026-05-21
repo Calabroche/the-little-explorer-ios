@@ -26,7 +26,7 @@ final class RideActivityManager {
                 pushType: nil,
             )
         } catch {
-            print("Failed to start Live Activity: \(error)")
+            Log.tracking.error("Failed to start Live Activity: \(error.localizedDescription, privacy: .public)")
         }
     }
 

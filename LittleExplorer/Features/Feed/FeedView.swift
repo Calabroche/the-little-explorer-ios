@@ -60,9 +60,7 @@ struct FeedView: View {
                 await env.activityStore.load(user: env.currentUser, force: true)
             }
         } catch {
-            #if DEBUG
-            print("[backgroundSyncStrava] skipped: \(error.localizedDescription)")
-            #endif
+            Log.sync.error("backgroundSyncStrava skipped: \(error.localizedDescription, privacy: .public)")
         }
     }
 

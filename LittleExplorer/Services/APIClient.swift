@@ -210,26 +210,36 @@ actor APIClient {
         if let token = authToken {
             req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         }
+        let path = req.url?.path ?? "?"
+        let method = req.httpMethod ?? "?"
         let data: Data
         let response: URLResponse
         do {
             (data, response) = try await session.data(for: req)
         } catch {
+            Log.api.error("\(method, privacy: .public) \(path, privacy: .public) — transport: \(error.localizedDescription, privacy: .public)")
             throw APIError.transport(error)
         }
         if let http = response as? HTTPURLResponse {
             if http.statusCode == 401 {
-                // Token expired or revoked — surface a distinct error
-                // so the RootView can sign out and bounce to LoginView.
+                Log.auth.error("\(method, privacy: .public) \(path, privacy: .public) — 401 unauthorized")
                 throw APIError.unauthorized
             }
             if !(200..<300).contains(http.statusCode) {
+                let preview = String(data: data.prefix(200), encoding: .utf8) ?? ""
+                Log.api.error("\(method, privacy: .public) \(path, privacy: .public) — HTTP \(http.statusCode) · \(preview, privacy: .public)")
                 throw APIError.http(http.statusCode)
             }
         }
         do {
             return try decoder.decode(T.self, from: data)
         } catch {
+            // Log a chunk of the payload so the diagnostics view shows
+            // what the server actually sent when decoding broke. Useful
+            // when a model drifts away from the API (the bike-route bug
+            // we just fixed would have surfaced here instantly).
+            let preview = String(data: data.prefix(400), encoding: .utf8) ?? "<binary>"
+            Log.api.error("\(method, privacy: .public) \(path, privacy: .public) — decode failure: \(error.localizedDescription, privacy: .public) · body: \(preview, privacy: .public)")
             throw APIError.decoding(error)
         }
     }
