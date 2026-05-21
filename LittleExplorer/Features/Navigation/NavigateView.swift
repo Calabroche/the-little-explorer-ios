@@ -39,7 +39,11 @@ struct NavigateView: View {
         }
         .toolbarBackground(.hidden, for: .navigationBar)
         .task {
-            let manager = NavigateState(api: environment.api, location: environment.location)
+            let manager = NavigateState(
+                api: environment.api,
+                location: environment.location,
+                activityManager: environment.activityManager,
+            )
             state = manager
             await manager.start(itinerary: itinerary)
         }
@@ -122,43 +126,65 @@ struct NavigateView: View {
     @ViewBuilder
     private var bottomBar: some View {
         if let state {
-            HStack(spacing: 16) {
-                stat(label: "RESTANT", value: formatDistance(state.distanceRemaining), color: AppColors.terra)
-                Spacer()
-                if state.offRoute {
-                    Label("Hors route", systemImage: "exclamationmark.triangle.fill")
-                        .font(.caption.weight(.semibold))
-                        .foregroundStyle(.red)
-                        .padding(8)
-                        .background(.white.opacity(0.85), in: Capsule())
+            VStack(spacing: 10) {
+                HStack(spacing: 0) {
+                    stat(label: "DISTANCE", value: formatKm(state.distanceTraveledM), color: AppColors.terra)
+                    stat(label: "VITESSE", value: String(format: "%.1f", state.currentSpeedKmh), unit: "km/h", color: .white)
+                    stat(label: "MOYENNE", value: String(format: "%.1f", state.avgSpeedKmh), unit: "km/h", color: .white)
+                    stat(label: "D+", value: "\(Int(state.elevationGainM))", unit: "m", color: AppColors.green)
                 }
-                Spacer()
-                if case .finished = state.phase {
-                    Button("Terminer") {
-                        state.stop()
-                        dismiss()
+
+                HStack(spacing: 12) {
+                    Label(formatDistance(state.distanceRemaining), systemImage: "flag.checkered")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.white)
+                    if state.offRoute {
+                        Label("Hors route", systemImage: "exclamationmark.triangle.fill")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.red)
+                            .padding(.horizontal, 8).padding(.vertical, 4)
+                            .background(.white.opacity(0.85), in: Capsule())
                     }
-                    .buttonStyle(.borderedProminent)
-                    .tint(.green)
+                    Spacer()
+                    if case .finished = state.phase {
+                        Button("Terminer") {
+                            state.stop()
+                            dismiss()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.green)
+                    }
                 }
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 16)
             .padding(.vertical, 14)
-            .background(Color.black.opacity(0.7))
+            .background(Color.black.opacity(0.75))
         }
     }
 
-    private func stat(label: String, value: String, color: Color) -> some View {
+    private func formatKm(_ meters: Double) -> String {
+        String(format: "%.2f km", meters / 1000)
+    }
+
+    private func stat(label: String, value: String, unit: String = "", color: Color) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label)
-                .font(.system(size: 9).weight(.semibold))
-                .tracking(1.0)
+                .font(.system(size: 8).weight(.bold))
+                .tracking(0.8)
                 .foregroundStyle(.white.opacity(0.7))
-            Text(value)
-                .font(.system(.title3, design: .serif).weight(.bold))
-                .foregroundStyle(.white)
-                .monospacedDigit()
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(value)
+                    .font(.system(.title3, design: .serif).weight(.bold))
+                    .foregroundStyle(color)
+                    .monospacedDigit()
+                if !unit.isEmpty {
+                    Text(unit)
+                        .font(.system(size: 9))
+                        .foregroundStyle(.white.opacity(0.6))
+                }
+            }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private func formatDistance(_ meters: Double) -> String {
