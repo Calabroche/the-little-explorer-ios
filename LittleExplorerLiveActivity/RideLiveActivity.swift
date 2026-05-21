@@ -68,17 +68,19 @@ private struct LockScreenView: View {
             }
 
             // ── Right: maneuver + metrics ────────────────────────────
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: 8) {
+                // Small top padding so the maneuver chip doesn't
+                // touch the banner's rounded top edge.
                 if let next = state.nextManeuver, let dist = state.nextManeuverDistanceM {
-                    HStack(spacing: 6) {
+                    HStack(spacing: 7) {
                         Image(systemName: state.nextManeuverSymbol ?? "arrow.up")
-                            .font(.system(size: 13).weight(.bold))
+                            .font(.system(size: 14).weight(.bold))
                             .foregroundStyle(.white)
-                            .frame(width: 24, height: 24)
+                            .frame(width: 26, height: 26)
                             .background(Color.blue, in: Circle())
                         VStack(alignment: .leading, spacing: 0) {
                             Text(formatMeters(dist))
-                                .font(.system(size: 16).weight(.heavy))
+                                .font(.system(size: 17).weight(.heavy))
                                 .monospacedDigit()
                                 .foregroundStyle(.white)
                                 .lineLimit(1).minimumScaleFactor(0.8)
@@ -89,28 +91,34 @@ private struct LockScreenView: View {
                         }
                         Spacer(minLength: 0)
                     }
+                    .padding(.top, 4)
                 }
 
                 Divider().background(.white.opacity(0.25))
 
-                // 2×2 grid of metrics, tighter spacing so the right
-                // column doesn't overflow on narrower devices.
-                VStack(spacing: 5) {
-                    HStack(spacing: 6) {
+                // 2×2 grid of metrics, bigger value font now so the
+                // numbers are readable at a glance.
+                VStack(spacing: 8) {
+                    HStack(spacing: 8) {
                         compactMetric("KM",       formatDistance(state.distanceKm))
                         compactMetric("VITESSE",  formatSpeed(state.speedKmh))
                     }
-                    HStack(spacing: 6) {
+                    HStack(spacing: 8) {
                         compactMetric("MOY",      formatSpeed(durationSec: state.durationSec, distKm: state.distanceKm))
                         compactMetric("D+",       "\(Int(state.elevationGainM))m")
                     }
                 }
 
-                Text(formatDuration(state.durationSec))
-                    .font(.system(size: 10).weight(.semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(.white.opacity(0.7))
-                    .frame(maxWidth: .infinity, alignment: .trailing)
+                // Duration also bumped up so it's not a tiny corner
+                // afterthought.
+                HStack(spacing: 4) {
+                    Image(systemName: "clock").font(.system(size: 10)).foregroundStyle(.white.opacity(0.6))
+                    Text(formatDuration(state.durationSec))
+                        .font(.system(size: 14).weight(.bold))
+                        .monospacedDigit()
+                        .foregroundStyle(.white)
+                    Spacer()
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -119,9 +127,9 @@ private struct LockScreenView: View {
 
     private func compactMetric(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(label).font(.system(size: 8).weight(.bold)).foregroundStyle(.white.opacity(0.6))
+            Text(label).font(.system(size: 9).weight(.bold)).foregroundStyle(.white.opacity(0.55))
             Text(value)
-                .font(.system(size: 12).weight(.bold))
+                .font(.system(size: 16).weight(.heavy))
                 .monospacedDigit()
                 .foregroundStyle(.white)
                 .lineLimit(1).minimumScaleFactor(0.7)
