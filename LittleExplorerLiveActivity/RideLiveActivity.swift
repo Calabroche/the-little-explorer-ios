@@ -68,23 +68,24 @@ private struct LockScreenView: View {
             }
 
             // ── Right: maneuver + metrics ────────────────────────────
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 6) {
                 if let next = state.nextManeuver, let dist = state.nextManeuverDistanceM {
-                    HStack(spacing: 8) {
+                    HStack(spacing: 6) {
                         Image(systemName: state.nextManeuverSymbol ?? "arrow.up")
-                            .font(.callout.weight(.bold))
+                            .font(.system(size: 13).weight(.bold))
                             .foregroundStyle(.white)
-                            .frame(width: 28, height: 28)
+                            .frame(width: 24, height: 24)
                             .background(Color.blue, in: Circle())
                         VStack(alignment: .leading, spacing: 0) {
                             Text(formatMeters(dist))
-                                .font(.headline.weight(.heavy))
+                                .font(.system(size: 16).weight(.heavy))
                                 .monospacedDigit()
                                 .foregroundStyle(.white)
+                                .lineLimit(1).minimumScaleFactor(0.8)
                             Text(next)
-                                .font(.caption2)
+                                .font(.system(size: 10))
                                 .foregroundStyle(.white.opacity(0.85))
-                                .lineLimit(1)
+                                .lineLimit(1).minimumScaleFactor(0.8)
                         }
                         Spacer(minLength: 0)
                     }
@@ -92,86 +93,110 @@ private struct LockScreenView: View {
 
                 Divider().background(.white.opacity(0.25))
 
-                // 2×2 grid of metrics: Distance / Speed on top,
-                // Avg / Elev below. Fits the narrow right column.
-                VStack(spacing: 6) {
-                    HStack(spacing: 8) {
-                        compactMetric("KM",    formatDistance(state.distanceKm))
-                        compactMetric("VITESSE", formatSpeed(state.speedKmh))
+                // 2×2 grid of metrics, tighter spacing so the right
+                // column doesn't overflow on narrower devices.
+                VStack(spacing: 5) {
+                    HStack(spacing: 6) {
+                        compactMetric("KM",       formatDistance(state.distanceKm))
+                        compactMetric("VITESSE",  formatSpeed(state.speedKmh))
                     }
-                    HStack(spacing: 8) {
-                        compactMetric("MOY",   formatSpeed(durationSec: state.durationSec, distKm: state.distanceKm))
-                        compactMetric("D+",    "\(Int(state.elevationGainM)) m")
+                    HStack(spacing: 6) {
+                        compactMetric("MOY",      formatSpeed(durationSec: state.durationSec, distKm: state.distanceKm))
+                        compactMetric("D+",       "\(Int(state.elevationGainM))m")
                     }
                 }
 
                 Text(formatDuration(state.durationSec))
-                    .font(.caption.weight(.semibold))
+                    .font(.system(size: 10).weight(.semibold))
                     .monospacedDigit()
                     .foregroundStyle(.white.opacity(0.7))
                     .frame(maxWidth: .infinity, alignment: .trailing)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(12)
+        .padding(10)
     }
 
     private func compactMetric(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 1) {
-            Text(label).font(.system(size: 9).weight(.bold)).foregroundStyle(.white.opacity(0.6))
-            Text(value).font(.system(size: 13).weight(.bold)).monospacedDigit().foregroundStyle(.white)
+            Text(label).font(.system(size: 8).weight(.bold)).foregroundStyle(.white.opacity(0.6))
+            Text(value)
+                .font(.system(size: 12).weight(.bold))
+                .monospacedDigit()
+                .foregroundStyle(.white)
+                .lineLimit(1).minimumScaleFactor(0.7)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    /// Mini map preview rendered via SwiftUI Canvas — MapKit's `Map`
-    /// view is NOT allowed in Widget / Live Activity contexts (you get
-    /// the iOS "no entry" placeholder if you try). We project the
-    /// polyline + user position into a 0..1 box centered on the user,
-    /// then draw with `Canvas`. Window is ~1 km on the long side so
-    /// the user sees enough route ahead.
+    /// Lock-screen map: a real MKMapSnapshotter-generated map image
+    /// (loaded from the shared App Group container) with the user dot
+    /// drawn on top via Canvas overlay so the position stays current.
+    /// Falls back to a Canvas-only render if the snapshot file isn't
+    /// present yet (first second after navigation start).
     @ViewBuilder
     private func lockMap(polyline: [[Double]], userLat: Double, userLng: Double) -> some View {
-        let windowMeters: Double = 1000
-        let cosLat = cos(userLat * .pi / 180)
-        let dLat = windowMeters / 111_000
-        let dLng = windowMeters / (111_000 * max(cosLat, 0.0001))
+        ZStack {
+            mapBackground()
+            userDotOverlay(polyline: polyline, userLat: userLat, userLng: userLng)
+        }
+        .frame(height: 150)
+        .background(Color.gray.opacity(0.15))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.15), lineWidth: 1))
+    }
 
+    /// Reads the MKMapSnapshotter JPEG from the App Group container.
+    /// On first call after navigation start the file might not exist
+    /// yet (snapshot runs in the background); we fall back to a
+    /// neutral grey while we wait.
+    @ViewBuilder
+    private func mapBackground() -> some View {
+        if let url = MapSnapshotShare.snapshotURL,
+           let data = try? Data(contentsOf: url),
+           let uiImage = UIImage(data: data) {
+            Image(uiImage: uiImage)
+                .resizable()
+                .scaledToFill()
+        } else {
+            // Fallback gradient — looks more "outdoor map" than a flat
+            // black panel while the snapshot is generating.
+            LinearGradient(
+                colors: [Color(red: 0.20, green: 0.27, blue: 0.20),
+                         Color(red: 0.10, green: 0.15, blue: 0.10)],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing,
+            )
+        }
+    }
+
+    /// Draw just the user-position dot using the polyline bounds to
+    /// project (userLat, userLng) → canvas coordinates. Matches the
+    /// extent the MKMapSnapshotter rendered (route bounding box +
+    /// 30% padding) so the dot lands where it should on the image.
+    @ViewBuilder
+    private func userDotOverlay(polyline: [[Double]], userLat: Double, userLng: Double) -> some View {
         Canvas { context, size in
-            // Map a (lat, lng) to canvas coordinates. Latitude is flipped
-            // because Canvas's Y axis points down.
-            func project(_ lat: Double, _ lng: Double) -> CGPoint {
-                let nx = (lng - (userLng - dLng / 2)) / dLng
-                let ny = 1 - (lat - (userLat - dLat / 2)) / dLat
-                return CGPoint(x: nx * size.width, y: ny * size.height)
-            }
+            let lats = polyline.map { $0[0] }
+            let lngs = polyline.map { $0[1] }
+            guard let minLat = lats.min(), let maxLat = lats.max(),
+                  let minLng = lngs.min(), let maxLng = lngs.max() else { return }
+            // Same 30% padding as in MapSnapshotShare.generate.
+            let centerLat = (minLat + maxLat) / 2
+            let centerLng = (minLng + maxLng) / 2
+            let halfLat = max(0.0005, (maxLat - minLat) * 0.65)
+            let halfLng = max(0.0005, (maxLng - minLng) * 0.65)
 
-            // Route polyline — dark outline + bright blue stroke for
-            // contrast on the Live Activity's dark background.
-            var path = Path()
-            var started = false
-            for pair in polyline where pair.count >= 2 {
-                let p = project(pair[0], pair[1])
-                if !started {
-                    path.move(to: p); started = true
-                } else {
-                    path.addLine(to: p)
-                }
-            }
-            context.stroke(path, with: .color(.black.opacity(0.5)), lineWidth: 7)
-            context.stroke(path, with: .color(.blue),               lineWidth: 4)
+            let nx = (userLng - (centerLng - halfLng)) / (halfLng * 2)
+            let ny = 1 - (userLat - (centerLat - halfLat)) / (halfLat * 2)
+            let p = CGPoint(x: nx * size.width, y: ny * size.height)
 
-            // User dot dead-center.
-            let center = CGPoint(x: size.width / 2, y: size.height / 2)
-            let outer  = CGRect(x: center.x - 9, y: center.y - 9, width: 18, height: 18)
-            let inner  = CGRect(x: center.x - 6, y: center.y - 6, width: 12, height: 12)
+            // Dot: white halo + blue core.
+            let outer = CGRect(x: p.x - 9, y: p.y - 9, width: 18, height: 18)
+            let inner = CGRect(x: p.x - 6, y: p.y - 6, width: 12, height: 12)
             context.fill(Path(ellipseIn: outer), with: .color(.white))
             context.fill(Path(ellipseIn: inner), with: .color(.blue))
         }
-        .frame(height: 150)
-        .background(Color.white.opacity(0.06))
-        .clipShape(RoundedRectangle(cornerRadius: 12))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.15), lineWidth: 1))
     }
 
     private func metric(_ label: String, _ value: String) -> some View {

@@ -6,6 +6,16 @@ import Observation
 final class RideActivityManager {
     private(set) var current: Activity<RideActivityAttributes>?
 
+    /// Wipe any Live Activities left over from a previous run of the
+    /// app (force-quit during nav, crash, etc). Called once at app
+    /// launch from AppEnvironment.init so the Dynamic Island pill
+    /// doesn't outlive the navigation it was attached to.
+    func endStaleActivities() async {
+        for activity in Activity<RideActivityAttributes>.activities {
+            await activity.end(nil, dismissalPolicy: .immediate)
+        }
+    }
+
     func start(sportLabel: String, routePolyline: [[Double]]? = nil) async {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
         let attributes = RideActivityAttributes(
