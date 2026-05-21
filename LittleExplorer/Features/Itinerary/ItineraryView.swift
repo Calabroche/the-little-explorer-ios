@@ -478,7 +478,7 @@ struct ItineraryView: View {
             gpxFileURL = url
             showShareSheet = true
         } catch {
-            print("Failed to write GPX: \(error)")
+            Log.ui.error("Failed to write GPX: \(error.localizedDescription, privacy: .public)")
         }
     }
 

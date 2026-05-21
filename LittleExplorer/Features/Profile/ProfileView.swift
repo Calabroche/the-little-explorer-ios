@@ -35,8 +35,9 @@ struct ProfileView: View {
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: ProfileRoute.self) { route in
                 switch route {
-                case .settings: SettingsView()
-                case .admin:    AdminView()
+                case .settings:    SettingsView()
+                case .admin:       AdminView()
+                case .diagnostics: DiagnosticsView()
                 }
             }
         }
@@ -83,6 +84,11 @@ struct ProfileView: View {
 
                 NavigationLink(value: ProfileRoute.settings) {
                     actionRow(symbol: "gearshape", text: "Paramètres", chevron: true)
+                }
+                .buttonStyle(.plain)
+
+                NavigationLink(value: ProfileRoute.diagnostics) {
+                    actionRow(symbol: "doc.text.magnifyingglass", text: "Diagnostics", chevron: true)
                 }
                 .buttonStyle(.plain)
 
@@ -381,7 +387,7 @@ struct ProfileView: View {
 }
 
 enum ProfileRoute: Hashable {
-    case settings, admin
+    case settings, admin, diagnostics
 }
 
 // MARK: - Theme segmented control

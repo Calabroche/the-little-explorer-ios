@@ -27,7 +27,7 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
     func send(_ message: [String: Any]) {
         guard let session, session.isReachable else { return }
         session.sendMessage(message, replyHandler: nil) { error in
-            print("Watch send error: \(error)")
+            Log.watch.error("send error: \(error.localizedDescription, privacy: .public)")
         }
     }
 
