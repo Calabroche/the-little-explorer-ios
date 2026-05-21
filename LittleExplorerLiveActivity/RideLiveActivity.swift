@@ -75,22 +75,38 @@ private struct LockScreenView: View {
                 lockMap(polyline: polyline, userLat: lat, userLng: lng)
             }
 
-            HStack(spacing: 16) {
-                metric("Distance", formatDistance(state.distanceKm))
-                metric("Speed", formatSpeed(state.speedKmh))
-                metric("Elev", "\(Int(state.elevationGainM)) m")
-            }
+            // Next maneuver above the metrics so it's the first thing
+            // the user sees when they glance at their lock screen.
             if let next = state.nextManeuver, let dist = state.nextManeuverDistanceM {
-                HStack(spacing: 8) {
+                HStack(spacing: 10) {
                     Image(systemName: state.nextManeuverSymbol ?? "arrow.up")
-                    Text(next).lineLimit(1)
+                        .font(.title3.weight(.bold))
+                        .foregroundStyle(.white)
+                        .frame(width: 36, height: 36)
+                        .background(Color.blue, in: Circle())
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(formatMeters(dist))
+                            .font(.title3.weight(.heavy))
+                            .monospacedDigit()
+                            .foregroundStyle(.white)
+                        Text(next)
+                            .font(.footnote)
+                            .foregroundStyle(.white.opacity(0.85))
+                            .lineLimit(1)
+                    }
                     Spacer()
-                    Text(formatMeters(dist)).monospacedDigit()
                 }
-                .font(.footnote.weight(.medium))
-                .foregroundStyle(.white)
-                .padding(8)
-                .background(.white.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
+            }
+
+            // Four-column metrics row (Distance / Speed / Avg / Elev)
+            // — user wanted more info than the original 3-up layout.
+            // Avg speed is duration-weighted so it stays meaningful
+            // when the user pauses at a light etc.
+            HStack(spacing: 12) {
+                metric("Distance", formatDistance(state.distanceKm))
+                metric("Speed",    formatSpeed(state.speedKmh))
+                metric("Avg",      formatSpeed(durationSec: state.durationSec, distKm: state.distanceKm))
+                metric("Elev",     "\(Int(state.elevationGainM)) m")
             }
         }
         .padding()
@@ -140,10 +156,10 @@ private struct LockScreenView: View {
             context.fill(Path(ellipseIn: outer), with: .color(.white))
             context.fill(Path(ellipseIn: inner), with: .color(.blue))
         }
-        .frame(height: 140)
+        .frame(height: 200)
         .background(Color.white.opacity(0.06))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.15), lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.15), lineWidth: 1))
     }
 
     private func metric(_ label: String, _ value: String) -> some View {
@@ -171,6 +187,14 @@ private func formatDuration(_ seconds: Double) -> String {
 
 private func formatSpeed(_ kmh: Double) -> String {
     String(format: "%.1f km/h", kmh)
+}
+
+/// Duration-weighted average speed in km/h. Returns 0 km/h before any
+/// real motion so the lock-screen banner doesn't flash bogus values.
+private func formatSpeed(durationSec: Double, distKm: Double) -> String {
+    guard durationSec > 0, distKm > 0 else { return "0.0 km/h" }
+    let avg = distKm / (durationSec / 3600)
+    return String(format: "%.1f km/h", avg)
 }
 
 private func formatMeters(_ meters: Double) -> String {

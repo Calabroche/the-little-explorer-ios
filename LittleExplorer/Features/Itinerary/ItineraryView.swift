@@ -89,7 +89,11 @@ struct ItineraryView: View {
             .sheet(isPresented: $showLibrarySheet) {
                 librarySheet(planner: planner)
             }
-            .navigationDestination(item: $navigatingItinerary) { itinerary in
+            // fullScreenCover (vs navigationDestination) so navigation
+            // takes over the WHOLE screen — covers the TabView's tab bar
+            // AND the PlannerHubView's tab bar above. User explicitly
+            // asked for "rien d'autre que le gps" during navigation.
+            .fullScreenCover(item: $navigatingItinerary) { itinerary in
                 NavigateView(itinerary: itinerary)
             }
             .alert("Supprimer cet itinéraire ?", isPresented: Binding(
