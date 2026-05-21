@@ -30,7 +30,7 @@ struct ItineraryView: View {
                     .padding(.horizontal, 16)
 
                     map
-                        .frame(height: 320)
+                        .frame(height: 460)
                         .clipShape(RoundedRectangle(cornerRadius: 4))
                         .overlay(RoundedRectangle(cornerRadius: 4).stroke(AppColors.creamBorder, lineWidth: 1))
                         .padding(.horizontal, 16)
@@ -211,54 +211,57 @@ struct ItineraryView: View {
                 .tint(AppColors.terra)
             }
 
+            // Action bar — compact icon+label pills on a single row so
+            // the buttons don't word-wrap. "Naviguer" is the primary
+            // action (filled terra), the rest are bordered.
             HStack(spacing: 8) {
-                Button {
+                actionPill(
+                    symbol: planner.extending ? "hourglass" : "arrow.up.left.and.arrow.down.right",
+                    label: planner.extending ? "Auto…" : "Auto",
+                    role: .secondary,
+                    disabled: planner.extending || planner.distanceMeters == nil || planner.targetKm - (planner.distanceMeters ?? 0) / 1000 < 3,
+                ) {
                     Task { await planner.autoExtend() }
-                } label: {
-                    Label(planner.extending ? "Allongement…" : "Auto-extend", systemImage: "arrow.up.right.and.arrow.down.left.rectangle")
-                        .font(.system(size: 12).weight(.semibold))
                 }
-                .buttonStyle(.bordered)
-                .tint(AppColors.terra)
-                .disabled(planner.extending || planner.distanceMeters == nil || planner.targetKm - (planner.distanceMeters ?? 0) / 1000 < 3)
 
-                Button {
+                actionPill(
+                    symbol: "square.and.arrow.down",
+                    label: "Sauver",
+                    role: .secondary,
+                    disabled: planner.waypoints.count < 2,
+                ) {
                     save(planner: planner)
-                } label: {
-                    Label("Sauver", systemImage: "square.and.arrow.down")
-                        .font(.system(size: 12).weight(.semibold))
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(AppColors.terra)
-                .disabled(planner.waypoints.count < 2)
 
-                Button {
+                actionPill(
+                    symbol: "square.and.arrow.up",
+                    label: "GPX",
+                    role: .secondary,
+                    disabled: planner.geometry == nil || planner.waypoints.isEmpty,
+                ) {
                     exportGpx(planner: planner)
-                } label: {
-                    Label("GPX", systemImage: "square.and.arrow.up")
-                        .font(.system(size: 12).weight(.semibold))
                 }
-                .buttonStyle(.bordered)
-                .disabled(planner.geometry == nil || planner.waypoints.isEmpty)
 
-                Button {
+                actionPill(
+                    symbol: "location.north.line.fill",
+                    label: "Naviguer",
+                    role: .primary,
+                    disabled: planner.waypoints.count < 2 || planner.geometry == nil,
+                ) {
                     startNavigate(planner: planner)
-                } label: {
-                    Label("Naviguer", systemImage: "location.north.line.fill")
-                        .font(.system(size: 12).weight(.semibold))
                 }
-                .buttonStyle(.bordered)
-                .tint(AppColors.green)
-                .disabled(planner.waypoints.count < 2 || planner.geometry == nil)
 
                 if !planner.waypoints.isEmpty {
-                    Spacer()
                     Button(role: .destructive) {
                         planner.clearAll()
                     } label: {
                         Image(systemName: "trash")
+                            .font(.system(size: 13))
+                            .foregroundStyle(.red.opacity(0.75))
+                            .frame(width: 38, height: 38)
+                            .background(Color.red.opacity(0.10), in: Circle())
                     }
-                    .buttonStyle(.bordered)
+                    .buttonStyle(.plain)
                 }
             }
 
@@ -489,5 +492,32 @@ struct ItineraryView: View {
         }
         let snapshot = planner.snapshot()
         navigatingItinerary = snapshot
+    }
+
+    /// Compact icon+label pill used by the action bar. Keeps all five
+    /// actions on one row by sizing each button uniformly and using a
+    /// small font; primary (Naviguer) is filled terra, the rest are
+    /// bordered cream.
+    private enum ActionRole { case primary, secondary }
+
+    @ViewBuilder
+    private func actionPill(symbol: String, label: String, role: ActionRole, disabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: symbol).font(.system(size: 11))
+                Text(label).font(.system(size: 11).weight(.semibold))
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 9)
+            .background(role == .primary ? AppColors.terra : AppColors.creamDark, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(role == .primary ? Color.clear : AppColors.creamBorder, lineWidth: 1),
+            )
+            .foregroundStyle(role == .primary ? Color.white : AppColors.inkMid)
+            .opacity(disabled ? 0.4 : 1)
+        }
+        .disabled(disabled)
+        .buttonStyle(.plain)
     }
 }
