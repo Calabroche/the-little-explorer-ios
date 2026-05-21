@@ -87,12 +87,11 @@ struct NavigateView: View {
     }
 
     private func attemptDismiss() {
-        if let state, state.distanceTraveledM > 50 {
-            showSaveDialog = true
-        } else {
-            state?.stop()
-            dismiss()
-        }
+        // Always show the dialog when the user exits — even if they
+        // barely moved. The "Ignorer cette sortie" option is there
+        // exactly for that case, and forcing the prompt removes the
+        // "where's my save dialog?" surprise the user reported.
+        showSaveDialog = true
     }
 
     private func saveAndDismiss() {
