@@ -2,11 +2,7 @@ import ActivityKit
 import Foundation
 import Observation
 
-/// @MainActor: `Activity.request` and `Activity.update` from ActivityKit
-/// must be called from the main actor on iOS 17+ — calling them from
-/// the cooperative thread pool crashes on device.
 @Observable
-@MainActor
 final class RideActivityManager {
     private(set) var current: Activity<RideActivityAttributes>?
 
