@@ -18,6 +18,12 @@ struct RootView: View {
                 LoginView()
             }
         }
+        // Best-effort stale Live Activity cleanup. Runs once after the
+        // scene has rendered so a misbehaving ActivityKit call can't
+        // prevent the UI from appearing on launch.
+        .task {
+            await environment.endStaleLiveActivities()
+        }
         // Keep APIClient's auth token in sync with the session. We
         // hop to the actor inside Task so the actor's state mutation
         // stays cleanly serialized.
