@@ -100,6 +100,17 @@ struct DiagnosticsView: View {
                         Label("Recharger", systemImage: "arrow.clockwise")
                     }
                     Button {
+                        emitTestEntries()
+                        Task {
+                            // Tiny pause so the new entries are flushed
+                            // to the store before we re-fetch.
+                            try? await Task.sleep(for: .milliseconds(200))
+                            await load()
+                        }
+                    } label: {
+                        Label("Émettre des logs de test", systemImage: "testtube.2")
+                    }
+                    Button {
                         share()
                     } label: {
                         Label("Partager (\(filteredEntries.count) lignes)", systemImage: "square.and.arrow.up")
@@ -110,7 +121,14 @@ struct DiagnosticsView: View {
                 }
             }
         }
-        .task { await load() }
+        .task {
+            // Always emit a "view opened" entry so a fresh process
+            // launching straight into Diagnostics still has something
+            // to display — useful when reporting "I never see anything"
+            // bugs.
+            Log.ui.notice("Diagnostics opened")
+            await load()
+        }
         .sheet(isPresented: $showShare) {
             if let items = shareItems {
                 ShareSheet(items: items)
@@ -293,6 +311,16 @@ struct DiagnosticsView: View {
         case .fault:     return .fault
         @unknown default: return .info
         }
+    }
+
+    // MARK: - Test entries (sanity check the pipeline)
+
+    private func emitTestEntries() {
+        Log.app.debug("Test debug entry — \(Date().timeIntervalSince1970)")
+        Log.app.info("Test info entry — \(Date().timeIntervalSince1970)")
+        Log.app.notice("Test notice entry — \(Date().timeIntervalSince1970)")
+        Log.app.warning("Test warning entry — \(Date().timeIntervalSince1970)")
+        Log.app.error("Test error entry — \(Date().timeIntervalSince1970, privacy: .public)")
     }
 
     // MARK: - Share
