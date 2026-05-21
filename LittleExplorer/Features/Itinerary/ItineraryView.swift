@@ -8,8 +8,8 @@ struct ItineraryView: View {
     @State private var library = ItineraryStore()
     @State private var cameraPosition: MapCameraPosition = .region(
         MKCoordinateRegion(
-            center: CLLocationCoordinate2D(latitude: 45.75, longitude: 4.85),
-            span: MKCoordinateSpan(latitudeDelta: 0.5, longitudeDelta: 0.5),
+            center: CLLocationCoordinate2D(latitude: 45.81, longitude: 4.75),
+            span: MKCoordinateSpan(latitudeDelta: 0.35, longitudeDelta: 0.35),
         ),
     )
     @State private var showShareSheet = false

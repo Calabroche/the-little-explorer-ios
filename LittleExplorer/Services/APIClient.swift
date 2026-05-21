@@ -58,6 +58,63 @@ actor APIClient {
         try await get("/api/me")
     }
 
+    /// PATCH /api/me — update rider weight, bike weight, FTP override.
+    /// Field semantics mirror the web API:
+    ///   - `.unchanged` → key omitted from request
+    ///   - `.set(value)` → key set to the number
+    ///   - `.clear` → key explicitly set to null (= revert to default)
+    func updateSettings(riderKg: SettingsField<Double>, bikeKg: SettingsField<Double>, customFtp: SettingsField<Int>) async throws -> MeProfile {
+        var body: [String: Any] = [:]
+        switch riderKg {
+        case .unchanged: break
+        case .set(let v): body["rider_kg"] = v
+        case .clear:     body["rider_kg"] = NSNull()
+        }
+        switch bikeKg {
+        case .unchanged: break
+        case .set(let v): body["bike_kg"] = v
+        case .clear:     body["bike_kg"] = NSNull()
+        }
+        switch customFtp {
+        case .unchanged: break
+        case .set(let v): body["custom_ftp"] = v
+        case .clear:     body["custom_ftp"] = NSNull()
+        }
+        return try await patchJSON("/api/me", jsonObject: body)
+    }
+
+    enum SettingsField<V> {
+        case unchanged
+        case set(V)
+        case clear
+    }
+
+    // MARK: - Admin
+
+    struct AdminUser: Decodable, Sendable, Identifiable {
+        let id: String
+        let email: String?
+        let name: String?
+        let athleteId: Int?
+        let activityCount: Int?
+        let providers: [String]?
+        let createdAt: String?
+
+        enum CodingKeys: String, CodingKey {
+            case id, email, name, providers
+            case athleteId      = "athlete_id"
+            case activityCount  = "activity_count"
+            case createdAt      = "created_at"
+        }
+    }
+
+    struct AdminUsersResponse: Decodable, Sendable { let users: [AdminUser] }
+
+    func adminUsers() async throws -> [AdminUser] {
+        let response: AdminUsersResponse = try await get("/api/admin/users")
+        return response.users
+    }
+
     // MARK: - Strava manual sync
 
     @discardableResult
@@ -133,6 +190,18 @@ actor APIClient {
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.httpBody = try JSONEncoder().encode(body)
+        return try await execute(request)
+    }
+
+    private func patchJSON<T: Decodable>(
+        _ path: String,
+        jsonObject: [String: Any],
+    ) async throws -> T {
+        let url = baseURL.appendingPathComponent(path)
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONSerialization.data(withJSONObject: jsonObject, options: [])
         return try await execute(request)
     }
 

@@ -247,10 +247,15 @@ struct ActivityCalendarView: View {
         let lastMonday = calendar.date(byAdding: .day, value: -mondayOffset, to: today)!
         let start = calendar.date(byAdding: .day, value: -((Self.weeksShown - 1) * 7), to: lastMonday)!
 
-        // Group activities by ISO day.
+        // Group activities by their LOCAL ISO day (yyyy-MM-dd in the
+        // device's timezone). Used to mirror the grid keys, which are
+        // also formatted in local time. Naively using `rawDate.prefix(10)`
+        // would bucket every ride under its UTC date — late-evening
+        // rides in Paris would land in the wrong cell, and "today's"
+        // cell would systematically be one day off near midnight UTC.
         var byDay: [String: [RideRecord]] = [:]
         for a in activities {
-            let key = String(a.rawDate.prefix(10))
+            let key = RideDate.localIsoDay(parsing: a.rawDate)
             byDay[key, default: []].append(a)
         }
 

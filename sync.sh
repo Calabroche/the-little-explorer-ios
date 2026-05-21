@@ -62,8 +62,18 @@ if [ -n "${SIM_ID:-}" ]; then
 
     SIM_APP="$DERIVED_SIM/Build/Products/Debug-iphonesimulator/${SCHEME}.app"
     if [ -d "$SIM_APP" ]; then
-        echo "▶︎ Reinstalling on simulator…"
-        "$XCRUN" simctl uninstall "$SIM_ID" "$BUNDLE_ID" 2>/dev/null || true
+        # Upgrade in place — do NOT uninstall first. Uninstalling wipes
+        # the app's keychain entries, which means the user gets booted
+        # back to the login screen on every sync. `simctl install`
+        # overwrites the existing .app without touching the keychain.
+        # Set CLEAN_INSTALL=1 to force a full wipe (e.g. when you really
+        # need to reset everything, including login state).
+        if [ "${CLEAN_INSTALL:-0}" = "1" ]; then
+            echo "▶︎ Clean install — wiping app data…"
+            "$XCRUN" simctl uninstall "$SIM_ID" "$BUNDLE_ID" 2>/dev/null || true
+        else
+            echo "▶︎ Upgrading in place on simulator (keychain preserved)…"
+        fi
         "$XCRUN" simctl install "$SIM_ID" "$SIM_APP"
         echo "▶︎ Launching on simulator…"
         "$XCRUN" simctl launch "$SIM_ID" "$BUNDLE_ID" >/dev/null

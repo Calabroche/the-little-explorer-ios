@@ -52,8 +52,8 @@ struct RootView: View {
                 .tabItem { Label("Track", systemImage: "record.circle") }
                 .tag(AppTab.track)
 
-            ItineraryView()
-                .tabItem { Label("Itinéraire", systemImage: "map") }
+            PlannerHubView()
+                .tabItem { Label("Planificateur", systemImage: "map") }
                 .tag(AppTab.itinerary)
 
             AnalyticsHubView()
