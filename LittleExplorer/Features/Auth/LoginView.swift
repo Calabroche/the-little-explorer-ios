@@ -38,6 +38,11 @@ struct LoginView: View {
                 }
             }
         }
+        // Force light mode on the login screen so the cream + forest
+        // photo + accent buttons stay readable even when the user's
+        // device is in dark mode. Without this the cream collapses to
+        // near-black on dark devices and the whole screen looks blank.
+        .preferredColorScheme(.light)
     }
 
     // MARK: - Hero (forest photo + title)
