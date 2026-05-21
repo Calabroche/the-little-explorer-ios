@@ -10,7 +10,16 @@ import UIKit
 /// pushes a Live Activity so the navigation keeps running with the
 /// screen locked — the next maneuver + distance + km + speed + elevation
 /// stay visible on the lock screen and Dynamic Island.
+///
+/// @MainActor: every method touches UIKit (UIApplication.shared),
+/// ActivityKit (Activity.request), or CLLocationManager — all main-
+/// thread-only. Without explicit isolation the methods would resume on
+/// the cooperative thread pool after an `await`, then crash the first
+/// time they touched UIApplication. On Debug-simulator builds Apple's
+/// executor tends to keep us on main most of the time so the bug hides;
+/// on device builds it fires reliably.
 @Observable
+@MainActor
 final class NavigateState {
     enum Phase: Equatable { case loading, ready, finished, failed(String) }
 
