@@ -64,30 +64,30 @@ private struct LockScreenView: View {
                let lat = state.userLat,
                let lng = state.userLng {
                 lockMap(polyline: polyline, userLat: lat, userLng: lng)
-                    .frame(width: 150)
+                    .frame(width: 130)
             }
 
             // ── Right: maneuver + metrics ────────────────────────────
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 10) {
                 // Small top padding so the maneuver chip doesn't
                 // touch the banner's rounded top edge.
                 if let next = state.nextManeuver, let dist = state.nextManeuverDistanceM {
-                    HStack(spacing: 7) {
+                    HStack(spacing: 8) {
                         Image(systemName: state.nextManeuverSymbol ?? "arrow.up")
-                            .font(.system(size: 14).weight(.bold))
+                            .font(.system(size: 16).weight(.bold))
                             .foregroundStyle(.white)
-                            .frame(width: 26, height: 26)
+                            .frame(width: 30, height: 30)
                             .background(Color.blue, in: Circle())
                         VStack(alignment: .leading, spacing: 0) {
                             Text(formatMeters(dist))
-                                .font(.system(size: 17).weight(.heavy))
+                                .font(.system(size: 20).weight(.heavy))
                                 .monospacedDigit()
                                 .foregroundStyle(.white)
-                                .lineLimit(1).minimumScaleFactor(0.8)
+                                .lineLimit(1).minimumScaleFactor(0.7)
                             Text(next)
-                                .font(.system(size: 10))
+                                .font(.system(size: 11))
                                 .foregroundStyle(.white.opacity(0.85))
-                                .lineLimit(1).minimumScaleFactor(0.8)
+                                .lineLimit(1).minimumScaleFactor(0.7)
                         }
                         Spacer(minLength: 0)
                     }
@@ -96,9 +96,9 @@ private struct LockScreenView: View {
 
                 Divider().background(.white.opacity(0.25))
 
-                // 2×2 grid of metrics, bigger value font now so the
-                // numbers are readable at a glance.
-                VStack(spacing: 8) {
+                // 2×2 grid of metrics — values at 20pt heavy so they
+                // dominate the right column.
+                VStack(spacing: 10) {
                     HStack(spacing: 8) {
                         compactMetric("KM",       formatDistance(state.distanceKm))
                         compactMetric("VITESSE",  formatSpeed(state.speedKmh))
@@ -109,12 +109,11 @@ private struct LockScreenView: View {
                     }
                 }
 
-                // Duration also bumped up so it's not a tiny corner
-                // afterthought.
-                HStack(spacing: 4) {
-                    Image(systemName: "clock").font(.system(size: 10)).foregroundStyle(.white.opacity(0.6))
+                // Duration with bigger font + clock icon.
+                HStack(spacing: 5) {
+                    Image(systemName: "clock").font(.system(size: 12)).foregroundStyle(.white.opacity(0.6))
                     Text(formatDuration(state.durationSec))
-                        .font(.system(size: 14).weight(.bold))
+                        .font(.system(size: 17).weight(.heavy))
                         .monospacedDigit()
                         .foregroundStyle(.white)
                     Spacer()
@@ -126,13 +125,13 @@ private struct LockScreenView: View {
     }
 
     private func compactMetric(_ label: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(label).font(.system(size: 9).weight(.bold)).foregroundStyle(.white.opacity(0.55))
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label).font(.system(size: 10).weight(.bold)).foregroundStyle(.white.opacity(0.55))
             Text(value)
-                .font(.system(size: 16).weight(.heavy))
+                .font(.system(size: 20).weight(.heavy))
                 .monospacedDigit()
                 .foregroundStyle(.white)
-                .lineLimit(1).minimumScaleFactor(0.7)
+                .lineLimit(1).minimumScaleFactor(0.65)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
