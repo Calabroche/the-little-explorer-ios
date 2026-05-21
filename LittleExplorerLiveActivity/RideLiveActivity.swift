@@ -68,19 +68,17 @@ private struct LockScreenView: View {
             }
 
             // ── Right: maneuver + metrics ────────────────────────────
-            VStack(alignment: .leading, spacing: 10) {
-                // Small top padding so the maneuver chip doesn't
-                // touch the banner's rounded top edge.
+            VStack(alignment: .leading, spacing: 8) {
                 if let next = state.nextManeuver, let dist = state.nextManeuverDistanceM {
                     HStack(spacing: 8) {
                         Image(systemName: state.nextManeuverSymbol ?? "arrow.up")
-                            .font(.system(size: 16).weight(.bold))
+                            .font(.system(size: 15).weight(.bold))
                             .foregroundStyle(.white)
-                            .frame(width: 30, height: 30)
+                            .frame(width: 28, height: 28)
                             .background(Color.blue, in: Circle())
                         VStack(alignment: .leading, spacing: 0) {
                             Text(formatMeters(dist))
-                                .font(.system(size: 20).weight(.heavy))
+                                .font(.system(size: 18).weight(.heavy))
                                 .monospacedDigit()
                                 .foregroundStyle(.white)
                                 .lineLimit(1).minimumScaleFactor(0.7)
@@ -96,9 +94,9 @@ private struct LockScreenView: View {
 
                 Divider().background(.white.opacity(0.25))
 
-                // 2×2 grid of metrics — values at 20pt heavy so they
-                // dominate the right column.
-                VStack(spacing: 10) {
+                // 2×2 grid of metrics + duration. Spacing tuned so the
+                // last row floats off the rounded bottom edge.
+                VStack(spacing: 8) {
                     HStack(spacing: 8) {
                         compactMetric("KM",       formatDistance(state.distanceKm))
                         compactMetric("VITESSE",  formatSpeed(state.speedKmh))
@@ -109,15 +107,15 @@ private struct LockScreenView: View {
                     }
                 }
 
-                // Duration with bigger font + clock icon.
                 HStack(spacing: 5) {
-                    Image(systemName: "clock").font(.system(size: 12)).foregroundStyle(.white.opacity(0.6))
+                    Image(systemName: "clock").font(.system(size: 11)).foregroundStyle(.white.opacity(0.6))
                     Text(formatDuration(state.durationSec))
-                        .font(.system(size: 17).weight(.heavy))
+                        .font(.system(size: 15).weight(.heavy))
                         .monospacedDigit()
                         .foregroundStyle(.white)
                     Spacer()
                 }
+                .padding(.bottom, 6)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -128,7 +126,7 @@ private struct LockScreenView: View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label).font(.system(size: 10).weight(.bold)).foregroundStyle(.white.opacity(0.55))
             Text(value)
-                .font(.system(size: 20).weight(.heavy))
+                .font(.system(size: 18).weight(.heavy))
                 .monospacedDigit()
                 .foregroundStyle(.white)
                 .lineLimit(1).minimumScaleFactor(0.65)
