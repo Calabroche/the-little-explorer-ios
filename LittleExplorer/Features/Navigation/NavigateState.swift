@@ -91,7 +91,8 @@ final class NavigateState {
         }
         UIApplication.shared.isIdleTimerDisabled = true
         startedAt = .now
-        await activityManager?.start(sportLabel: "Navigation")
+        let polyline = downsampledPolyline(self.route?.geometry ?? [], maxPoints: 100)
+        await activityManager?.start(sportLabel: "Navigation", routePolyline: polyline)
         startClock()
         trackingTask = Task { [stream = location.startTracking()] in
             for await loc in stream {
@@ -244,7 +245,29 @@ final class NavigateState {
             nextManeuver: step.map { ManeuverFormatter.core($0, lang: lang) },
             nextManeuverDistanceM: step != nil ? distanceToNextStep : nil,
             nextManeuverSymbol: step?.maneuverSymbol,
+            userLat: userLocation?.coordinate.latitude,
+            userLng: userLocation?.coordinate.longitude,
         )
         await activityManager.update(stateUpdate)
+    }
+
+    /// Uniform downsample of a polyline to at most `maxPoints` points
+    /// (always keeping the first and last). Used to keep the Live
+    /// Activity payload under the ContentState 4KB budget — at 100
+    /// points × 16 bytes/coord that's ~1.6KB which leaves room for
+    /// the rest of the state.
+    private func downsampledPolyline(_ coords: [Coordinate], maxPoints: Int) -> [[Double]]? {
+        guard !coords.isEmpty else { return nil }
+        if coords.count <= maxPoints {
+            return coords.map { [$0.lat, $0.lng] }
+        }
+        let step = Double(coords.count - 1) / Double(maxPoints - 1)
+        var out: [[Double]] = []
+        out.reserveCapacity(maxPoints)
+        for i in 0..<maxPoints {
+            let idx = min(Int(Double(i) * step), coords.count - 1)
+            out.append([coords[idx].lat, coords[idx].lng])
+        }
+        return out
     }
 }

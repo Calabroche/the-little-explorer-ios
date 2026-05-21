@@ -123,6 +123,8 @@ targets:
       - sdk: ActivityKit.framework
       - sdk: WidgetKit.framework
       - sdk: SwiftUI.framework
+      - sdk: MapKit.framework
+      - sdk: CoreLocation.framework
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.calabrese.little-explorer-ios.LiveActivity

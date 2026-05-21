@@ -9,10 +9,12 @@ struct NavigateView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.dismiss) private var dismiss
     @State private var state: NavigateState?
-    @State private var cameraPosition: MapCameraPosition = .userLocation(
-        followsHeading: true,
-        fallback: .automatic,
-    )
+    /// Start framed on the whole route. As soon as the first GPS fix
+    /// arrives we switch to a tilted follow-camera (see .onChange below).
+    @State private var cameraPosition: MapCameraPosition = .automatic
+    /// Cached heading — used so the camera stays oriented even when
+    /// CLLocation.course briefly returns -1 (invalid) between fixes.
+    @State private var lastValidHeading: CLLocationDirection = 0
 
     var body: some View {
         ZStack {
@@ -47,6 +49,10 @@ struct NavigateView: View {
             state = manager
             await manager.start(itinerary: itinerary)
         }
+        .onChange(of: state?.userLocation?.timestamp) { _, _ in
+            guard let loc = state?.userLocation else { return }
+            recenterCamera(on: loc)
+        }
         .onDisappear { state?.stop() }
     }
 
@@ -54,17 +60,50 @@ struct NavigateView: View {
         Map(position: $cameraPosition) {
             UserAnnotation()
             if let route = state?.route, !route.geometry.isEmpty {
+                // Apple-Maps-style polyline: bold systemBlue stroke
+                // with a slightly darker outline for contrast on
+                // light terrain. Drawing twice (stroke then thinner
+                // overlay) gives the layered look Apple uses.
                 MapPolyline(coordinates: route.geometry.map(\.clLocation))
-                    .stroke(AppColors.terra, lineWidth: 6)
+                    .stroke(Color.black.opacity(0.35), lineWidth: 11)
+                MapPolyline(coordinates: route.geometry.map(\.clLocation))
+                    .stroke(Color.blue, lineWidth: 8)
             }
             ForEach(Array(itinerary.waypoints.enumerated()), id: \.offset) { index, waypoint in
                 Marker("\(index + 1)", coordinate: waypoint.coordinate.clLocation)
                     .tint(AppColors.green)
             }
         }
+        // Realistic 3D buildings + clean POI rendering to match the
+        // Apple Maps navigation experience the user pointed to. POIs
+        // are excluded so the route stays the visual focus.
+        .mapStyle(.standard(elevation: .realistic, pointsOfInterest: .excludingAll))
         .mapControls {
             MapUserLocationButton()
             MapCompass()
+            MapPitchToggle()
+        }
+    }
+
+    /// Reposition the camera as a tilted follow-cam. Uses the user's
+    /// current course as the camera heading (so the route ahead is
+    /// always pointing "up"). Distance 250 m + pitch 55° matches
+    /// Apple Maps' default driving camera.
+    private func recenterCamera(on loc: CLLocation) {
+        let heading: CLLocationDirection
+        if loc.course >= 0 {
+            heading = loc.course
+            lastValidHeading = loc.course
+        } else {
+            heading = lastValidHeading
+        }
+        withAnimation(.linear(duration: 0.8)) {
+            cameraPosition = .camera(MapCamera(
+                centerCoordinate: loc.coordinate,
+                distance: 250,
+                heading: heading,
+                pitch: 55,
+            ))
         }
     }
 

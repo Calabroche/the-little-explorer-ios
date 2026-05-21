@@ -6,9 +6,13 @@ import Observation
 final class RideActivityManager {
     private(set) var current: Activity<RideActivityAttributes>?
 
-    func start(sportLabel: String) async {
+    func start(sportLabel: String, routePolyline: [[Double]]? = nil) async {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-        let attributes = RideActivityAttributes(sportLabel: sportLabel, startedAt: .now)
+        let attributes = RideActivityAttributes(
+            sportLabel: sportLabel,
+            startedAt: .now,
+            routePolyline: routePolyline,
+        )
         let initial = RideActivityAttributes.RideState(
             distanceKm: 0,
             durationSec: 0,
@@ -18,6 +22,8 @@ final class RideActivityManager {
             nextManeuver: nil,
             nextManeuverDistanceM: nil,
             nextManeuverSymbol: nil,
+            userLat: nil,
+            userLng: nil,
         )
         do {
             current = try Activity.request(

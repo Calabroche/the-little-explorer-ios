@@ -1,4 +1,6 @@
 import ActivityKit
+import CoreLocation
+import MapKit
 import SwiftUI
 import WidgetKit
 
@@ -49,7 +51,8 @@ private struct LockScreenView: View {
     let state: RideActivityAttributes.RideState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
+            // Compact top row: sport + elapsed time on the right.
             HStack {
                 Label(attributes.sportLabel, systemImage: "bicycle")
                     .font(.subheadline.weight(.semibold))
@@ -60,6 +63,18 @@ private struct LockScreenView: View {
                     .monospacedDigit()
                     .foregroundStyle(.white)
             }
+
+            // Live map preview — shows the route polyline + the user's
+            // current position. Renders only when we have BOTH a
+            // polyline (set when navigation started) and a recent
+            // user coordinate (pushed every second via state updates).
+            if let polyline = attributes.routePolyline,
+               polyline.count >= 2,
+               let lat = state.userLat,
+               let lng = state.userLng {
+                lockMap(polyline: polyline, userLat: lat, userLng: lng)
+            }
+
             HStack(spacing: 16) {
                 metric("Distance", formatDistance(state.distanceKm))
                 metric("Speed", formatSpeed(state.speedKmh))
@@ -79,6 +94,38 @@ private struct LockScreenView: View {
             }
         }
         .padding()
+    }
+
+    /// Tiny MapKit preview: the (downsampled) route polyline drawn in
+    /// blue, with a blue dot for the user's current position. The
+    /// camera is framed on a tight box around the user (≈800 m on the
+    /// long side) so the view follows them as they ride.
+    @ViewBuilder
+    private func lockMap(polyline: [[Double]], userLat: Double, userLng: Double) -> some View {
+        let coords = polyline.compactMap { pair -> CLLocationCoordinate2D? in
+            guard pair.count >= 2 else { return nil }
+            return CLLocationCoordinate2D(latitude: pair[0], longitude: pair[1])
+        }
+        let user = CLLocationCoordinate2D(latitude: userLat, longitude: userLng)
+        let region = MKCoordinateRegion(
+            center: user,
+            latitudinalMeters: 700,
+            longitudinalMeters: 700,
+        )
+        Map(initialPosition: .region(region)) {
+            MapPolyline(coordinates: coords)
+                .stroke(Color.blue, lineWidth: 5)
+            Annotation("", coordinate: user) {
+                ZStack {
+                    Circle().fill(Color.blue).frame(width: 14, height: 14)
+                    Circle().stroke(Color.white, lineWidth: 2).frame(width: 14, height: 14)
+                }
+            }
+        }
+        .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll))
+        .frame(height: 140)
+        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .allowsHitTesting(false)
     }
 
     private func metric(_ label: String, _ value: String) -> some View {
