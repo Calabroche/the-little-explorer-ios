@@ -130,7 +130,6 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: com.calabrese.little-explorer-ios.LiveActivity
         SKIP_INSTALL: YES
         TARGETED_DEVICE_FAMILY: "1,2"
-        CODE_SIGN_ENTITLEMENTS: LittleExplorerLiveActivity/Entitlements/LittleExplorerLiveActivity.entitlements
 
   # ─── watchOS App (single target, watchOS 10+) ───────────────────────────────
   LittleExplorerWatch:

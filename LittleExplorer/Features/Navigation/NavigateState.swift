@@ -102,15 +102,6 @@ final class NavigateState {
         UIApplication.shared.isIdleTimerDisabled = true
         startedAt = .now
         let polyline = downsampledPolyline(self.route?.geometry ?? [], maxPoints: 100)
-        // Generate a static map snapshot for the Live Activity. Saved
-        // to the App Group container so the widget can read the JPEG
-        // back without ContentState's 4 KB limit getting in the way.
-        if let coords = self.route?.geometry, !coords.isEmpty {
-            let clCoords = coords.map { CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lng) }
-            Task.detached(priority: .utility) {
-                _ = await MapSnapshotShare.generate(polyline: clCoords)
-            }
-        }
         await activityManager?.start(sportLabel: "Navigation", routePolyline: polyline)
         startClock()
         trackingTask = Task { [stream = location.startTracking()] in
