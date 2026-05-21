@@ -37,10 +37,20 @@ final class NavigateState {
     private(set) var currentSpeedKmh: Double = 0
     private(set) var avgSpeedKmh: Double = 0
     private(set) var elevationGainM: Double = 0
+    private(set) var elevationDescentM: Double = 0
+    private(set) var maxSpeedKmh: Double = 0
     private(set) var elapsedSec: Double = 0
-    private var startedAt: Date?
+    private(set) var startedAt: Date?
     private var lastLocationForTracking: CLLocation?
     private var clockTask: Task<Void, Never>?
+
+    // Sampled streams — captured so we can build a real RideRecord at
+    // the end of the navigation (same shape RideTracker produces).
+    private(set) var sampledGps: [Coordinate] = []
+    private(set) var sampledAltitude: [Double] = []
+    private(set) var sampledSpeedKmh: [Double] = []
+    private(set) var sampledDistanceM: [Double] = []
+    private(set) var sampledTimeS: [Double] = []
 
     private let api: APIClient
     private let location: LocationManager
@@ -161,10 +171,23 @@ final class NavigateState {
                 distanceTraveledM += delta
                 let altDelta = loc.altitude - last.altitude
                 if altDelta > 0 { elevationGainM += altDelta }
+                else if altDelta < 0 { elevationDescentM += -altDelta }
             }
         }
         lastLocationForTracking = loc
         currentSpeedKmh = max(0, loc.speed) * 3.6  // CLLocation.speed is in m/s, < 0 when invalid
+        if currentSpeedKmh > maxSpeedKmh { maxSpeedKmh = currentSpeedKmh }
+
+        // Capture per-sample streams so we can build a full RideRecord
+        // at the end of the navigation (same fields a tracked ride
+        // would carry — gps, altitude, speed, distance, time arrays).
+        sampledGps.append(Coordinate(lat: loc.coordinate.latitude, lng: loc.coordinate.longitude))
+        sampledAltitude.append(loc.altitude)
+        sampledSpeedKmh.append(currentSpeedKmh)
+        sampledDistanceM.append(distanceTraveledM)
+        if let startedAt {
+            sampledTimeS.append(loc.timestamp.timeIntervalSince(startedAt))
+        }
 
         guard let route else { return }
         let user = Coordinate(lat: loc.coordinate.latitude, lng: loc.coordinate.longitude)
@@ -269,5 +292,70 @@ final class NavigateState {
             out.append([coords[idx].lat, coords[idx].lng])
         }
         return out
+    }
+
+    /// Build a RideRecord from the captured streams — same shape as
+    /// RideTracker.commitRecord(title:) so the activity slots
+    /// straight into LocalRideStore + the feed alongside ridden
+    /// activities. Returns nil if nothing meaningful was recorded
+    /// (no distance, no start time).
+    func commitRecord(sport: Sport, title customTitle: String?) -> RideRecord? {
+        guard let startedAt, distanceTraveledM > 50 else { return nil }
+        let endDate = Date()
+        let durationSeconds = elapsedSec > 0 ? elapsedSec : endDate.timeIntervalSince(startedAt)
+        let durationMin = max(0, Int((durationSeconds / 60).rounded()))
+        let distanceKm = distanceTraveledM / 1000
+        let avgSpeed = durationSeconds > 0 ? distanceTraveledM / durationSeconds * 3.6 : 0
+
+        let dateFormatter: DateFormatter = {
+            let f = DateFormatter()
+            f.dateFormat = "dd MMM yyyy"
+            f.locale = Locale(identifier: "fr_FR")
+            return f
+        }()
+        let title: String = {
+            let trimmed = (customTitle ?? "").trimmingCharacters(in: .whitespaces)
+            if !trimmed.isEmpty { return trimmed }
+            return "Navigation · \(dateFormatter.string(from: startedAt))"
+        }()
+        let isoFormatter = ISO8601DateFormatter()
+        isoFormatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+
+        return RideRecord(
+            id: -Int(startedAt.timeIntervalSince1970),
+            type: sport.rawValue,
+            originalType: nil,
+            title: title,
+            date: dateFormatter.string(from: startedAt).uppercased(),
+            rawDate: isoFormatter.string(from: startedAt),
+            location: nil,
+            duration: formatDurationLabel(seconds: durationSeconds),
+            durationMin: durationMin,
+            distance: (distanceKm * 100).rounded() / 100,
+            speed: (avgSpeed * 10).rounded() / 10,
+            maxSpeed: (maxSpeedKmh * 10).rounded() / 10,
+            elevation: elevationGainM > 0 ? (elevationGainM * 10).rounded() / 10 : nil,
+            descent: elevationDescentM > 0 ? (elevationDescentM * 10).rounded() / 10 : nil,
+            gps: sampledGps,
+            altitude: sampledAltitude.isEmpty ? nil : sampledAltitude,
+            speedKmh: sampledSpeedKmh.isEmpty ? nil : sampledSpeedKmh,
+            heartrate: nil,
+            distanceM: sampledDistanceM.isEmpty ? nil : sampledDistanceM,
+            timeS: sampledTimeS.isEmpty ? nil : sampledTimeS,
+            maxIncline: nil,
+            minIncline: nil,
+            avgHr: nil, maxHr: nil, calories: nil,
+            np: nil, avgPower: nil, tss: nil, ifFactor: nil, vi: nil,
+            wkg: nil, ef: nil, trimp: nil, vam: nil, ftp: nil,
+            weather: nil, bestEfforts: nil, photos: nil, hrZones: nil,
+            aed: nil, riderKg: nil, totalMass: nil, paceSPerKm: nil,
+        )
+    }
+
+    private func formatDurationLabel(seconds: TimeInterval) -> String {
+        let s = Int(seconds.rounded())
+        let h = s / 3600
+        let m = (s % 3600) / 60
+        return h > 0 ? "\(h)h \(String(format: "%02d", m))m" : "\(m) min"
     }
 }

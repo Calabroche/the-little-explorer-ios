@@ -15,6 +15,9 @@ struct NavigateView: View {
     /// Cached heading — used so the camera stays oriented even when
     /// CLLocation.course briefly returns -1 (invalid) between fixes.
     @State private var lastValidHeading: CLLocationDirection = 0
+    /// True when the user has tapped X — we keep the view alive to
+    /// show the save dialog.
+    @State private var showSaveDialog: Bool = false
 
     var body: some View {
         ZStack {
@@ -24,22 +27,25 @@ struct NavigateView: View {
                 Spacer()
                 bottomBar
             }
-        }
-        .navigationBarBackButtonHidden(true)
-        .toolbar {
-            ToolbarItem(placement: .topBarLeading) {
-                Button {
-                    state?.stop()
-                    dismiss()
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.title2)
-                        .foregroundStyle(.white)
-                        .background(Color.black.opacity(0.3), in: Circle())
+            // Close button anchored inside the view (no nav bar — we
+            // run as a fullScreenCover with all chrome hidden).
+            VStack {
+                HStack {
+                    Button {
+                        attemptDismiss()
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .font(.title)
+                            .foregroundStyle(.white, Color.black.opacity(0.6))
+                    }
+                    .padding(.leading, 16)
+                    .padding(.top, 6)
+                    Spacer()
                 }
+                Spacer()
             }
         }
-        .toolbarBackground(.hidden, for: .navigationBar)
+        .statusBarHidden(false)
         .task {
             let manager = NavigateState(
                 api: environment.api,
@@ -54,6 +60,51 @@ struct NavigateView: View {
             recenterCamera(on: loc)
         }
         .onDisappear { state?.stop() }
+        .confirmationDialog(
+            "Enregistrer cette sortie ?",
+            isPresented: $showSaveDialog,
+            titleVisibility: .visible,
+        ) {
+            Button("Sauvegarder dans Petit Explorer") {
+                saveAndDismiss()
+            }
+            Button("Sauvegarder + envoyer sur Strava (bientôt)") {
+                saveAndDismiss()
+            }
+            .disabled(true)
+            Button("Ignorer cette sortie", role: .destructive) {
+                state?.stop()
+                dismiss()
+            }
+            Button("Annuler", role: .cancel) {}
+        } message: {
+            if let state {
+                Text("\(String(format: "%.2f", state.distanceTraveledM / 1000)) km · \(Int(state.elapsedSec / 60)) min · \(Int(state.elevationGainM)) m D+")
+            } else {
+                Text("")
+            }
+        }
+    }
+
+    private func attemptDismiss() {
+        if let state, state.distanceTraveledM > 50 {
+            showSaveDialog = true
+        } else {
+            state?.stop()
+            dismiss()
+        }
+    }
+
+    private func saveAndDismiss() {
+        guard let state else { dismiss(); return }
+        let sport = environment.selectedSport
+        if let record = state.commitRecord(sport: sport, title: itinerary.name) {
+            environment.localRides.add(record, for: environment.currentUser)
+            environment.activityStore.refreshLocal(user: environment.currentUser)
+            Log.nav.notice("ride saved: \(String(format: "%.2f", record.distance ?? 0), privacy: .public) km")
+        }
+        state.stop()
+        dismiss()
     }
 
     private var map: some View {
