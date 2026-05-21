@@ -96,36 +96,54 @@ private struct LockScreenView: View {
         .padding()
     }
 
-    /// Tiny MapKit preview: the (downsampled) route polyline drawn in
-    /// blue, with a blue dot for the user's current position. The
-    /// camera is framed on a tight box around the user (≈800 m on the
-    /// long side) so the view follows them as they ride.
+    /// Mini map preview rendered via SwiftUI Canvas — MapKit's `Map`
+    /// view is NOT allowed in Widget / Live Activity contexts (you get
+    /// the iOS "no entry" placeholder if you try). We project the
+    /// polyline + user position into a 0..1 box centered on the user,
+    /// then draw with `Canvas`. Window is ~1 km on the long side so
+    /// the user sees enough route ahead.
     @ViewBuilder
     private func lockMap(polyline: [[Double]], userLat: Double, userLng: Double) -> some View {
-        let coords = polyline.compactMap { pair -> CLLocationCoordinate2D? in
-            guard pair.count >= 2 else { return nil }
-            return CLLocationCoordinate2D(latitude: pair[0], longitude: pair[1])
-        }
-        let user = CLLocationCoordinate2D(latitude: userLat, longitude: userLng)
-        let region = MKCoordinateRegion(
-            center: user,
-            latitudinalMeters: 700,
-            longitudinalMeters: 700,
-        )
-        Map(initialPosition: .region(region)) {
-            MapPolyline(coordinates: coords)
-                .stroke(Color.blue, lineWidth: 5)
-            Annotation("", coordinate: user) {
-                ZStack {
-                    Circle().fill(Color.blue).frame(width: 14, height: 14)
-                    Circle().stroke(Color.white, lineWidth: 2).frame(width: 14, height: 14)
+        let windowMeters: Double = 1000
+        let cosLat = cos(userLat * .pi / 180)
+        let dLat = windowMeters / 111_000
+        let dLng = windowMeters / (111_000 * max(cosLat, 0.0001))
+
+        Canvas { context, size in
+            // Map a (lat, lng) to canvas coordinates. Latitude is flipped
+            // because Canvas's Y axis points down.
+            func project(_ lat: Double, _ lng: Double) -> CGPoint {
+                let nx = (lng - (userLng - dLng / 2)) / dLng
+                let ny = 1 - (lat - (userLat - dLat / 2)) / dLat
+                return CGPoint(x: nx * size.width, y: ny * size.height)
+            }
+
+            // Route polyline — dark outline + bright blue stroke for
+            // contrast on the Live Activity's dark background.
+            var path = Path()
+            var started = false
+            for pair in polyline where pair.count >= 2 {
+                let p = project(pair[0], pair[1])
+                if !started {
+                    path.move(to: p); started = true
+                } else {
+                    path.addLine(to: p)
                 }
             }
+            context.stroke(path, with: .color(.black.opacity(0.5)), lineWidth: 7)
+            context.stroke(path, with: .color(.blue),               lineWidth: 4)
+
+            // User dot dead-center.
+            let center = CGPoint(x: size.width / 2, y: size.height / 2)
+            let outer  = CGRect(x: center.x - 9, y: center.y - 9, width: 18, height: 18)
+            let inner  = CGRect(x: center.x - 6, y: center.y - 6, width: 12, height: 12)
+            context.fill(Path(ellipseIn: outer), with: .color(.white))
+            context.fill(Path(ellipseIn: inner), with: .color(.blue))
         }
-        .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll))
         .frame(height: 140)
+        .background(Color.white.opacity(0.06))
         .clipShape(RoundedRectangle(cornerRadius: 10))
-        .allowsHitTesting(false)
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Color.white.opacity(0.15), lineWidth: 1))
     }
 
     private func metric(_ label: String, _ value: String) -> some View {
