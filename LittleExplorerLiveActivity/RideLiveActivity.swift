@@ -51,65 +51,77 @@ private struct LockScreenView: View {
     let state: RideActivityAttributes.RideState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            // Compact top row: sport + elapsed time on the right.
-            HStack {
-                Label(attributes.sportLabel, systemImage: "bicycle")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.white)
-                Spacer()
-                Text(formatDuration(state.durationSec))
-                    .font(.subheadline.weight(.semibold))
-                    .monospacedDigit()
-                    .foregroundStyle(.white)
-            }
-
-            // Live map preview — shows the route polyline + the user's
-            // current position. Renders only when we have BOTH a
-            // polyline (set when navigation started) and a recent
-            // user coordinate (pushed every second via state updates).
+        // Horizontal layout — map on the left, vertical stack of
+        // (next-maneuver + 4 metrics) on the right. iOS caps the
+        // Live Activity lock-screen presentation at roughly 200pt of
+        // height, so stacking everything vertically caused content to
+        // get cropped. Going side-by-side packs the same info under
+        // that ceiling.
+        HStack(alignment: .top, spacing: 12) {
+            // ── Left: map ─────────────────────────────────────────────
             if let polyline = attributes.routePolyline,
                polyline.count >= 2,
                let lat = state.userLat,
                let lng = state.userLng {
                 lockMap(polyline: polyline, userLat: lat, userLng: lng)
+                    .frame(width: 150)
             }
 
-            // Next maneuver above the metrics so it's the first thing
-            // the user sees when they glance at their lock screen.
-            if let next = state.nextManeuver, let dist = state.nextManeuverDistanceM {
-                HStack(spacing: 10) {
-                    Image(systemName: state.nextManeuverSymbol ?? "arrow.up")
-                        .font(.title3.weight(.bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 36, height: 36)
-                        .background(Color.blue, in: Circle())
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(formatMeters(dist))
-                            .font(.title3.weight(.heavy))
-                            .monospacedDigit()
+            // ── Right: maneuver + metrics ────────────────────────────
+            VStack(alignment: .leading, spacing: 8) {
+                if let next = state.nextManeuver, let dist = state.nextManeuverDistanceM {
+                    HStack(spacing: 8) {
+                        Image(systemName: state.nextManeuverSymbol ?? "arrow.up")
+                            .font(.callout.weight(.bold))
                             .foregroundStyle(.white)
-                        Text(next)
-                            .font(.footnote)
-                            .foregroundStyle(.white.opacity(0.85))
-                            .lineLimit(1)
+                            .frame(width: 28, height: 28)
+                            .background(Color.blue, in: Circle())
+                        VStack(alignment: .leading, spacing: 0) {
+                            Text(formatMeters(dist))
+                                .font(.headline.weight(.heavy))
+                                .monospacedDigit()
+                                .foregroundStyle(.white)
+                            Text(next)
+                                .font(.caption2)
+                                .foregroundStyle(.white.opacity(0.85))
+                                .lineLimit(1)
+                        }
+                        Spacer(minLength: 0)
                     }
-                    Spacer()
                 }
-            }
 
-            // Four-column metrics row (Distance / Speed / Avg / Elev)
-            // — user wanted more info than the original 3-up layout.
-            // Avg speed is duration-weighted so it stays meaningful
-            // when the user pauses at a light etc.
-            HStack(spacing: 12) {
-                metric("Distance", formatDistance(state.distanceKm))
-                metric("Speed",    formatSpeed(state.speedKmh))
-                metric("Avg",      formatSpeed(durationSec: state.durationSec, distKm: state.distanceKm))
-                metric("Elev",     "\(Int(state.elevationGainM)) m")
+                Divider().background(.white.opacity(0.25))
+
+                // 2×2 grid of metrics: Distance / Speed on top,
+                // Avg / Elev below. Fits the narrow right column.
+                VStack(spacing: 6) {
+                    HStack(spacing: 8) {
+                        compactMetric("KM",    formatDistance(state.distanceKm))
+                        compactMetric("VITESSE", formatSpeed(state.speedKmh))
+                    }
+                    HStack(spacing: 8) {
+                        compactMetric("MOY",   formatSpeed(durationSec: state.durationSec, distKm: state.distanceKm))
+                        compactMetric("D+",    "\(Int(state.elevationGainM)) m")
+                    }
+                }
+
+                Text(formatDuration(state.durationSec))
+                    .font(.caption.weight(.semibold))
+                    .monospacedDigit()
+                    .foregroundStyle(.white.opacity(0.7))
+                    .frame(maxWidth: .infinity, alignment: .trailing)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding()
+        .padding(12)
+    }
+
+    private func compactMetric(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(label).font(.system(size: 9).weight(.bold)).foregroundStyle(.white.opacity(0.6))
+            Text(value).font(.system(size: 13).weight(.bold)).monospacedDigit().foregroundStyle(.white)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     /// Mini map preview rendered via SwiftUI Canvas — MapKit's `Map`
@@ -156,7 +168,7 @@ private struct LockScreenView: View {
             context.fill(Path(ellipseIn: outer), with: .color(.white))
             context.fill(Path(ellipseIn: inner), with: .color(.blue))
         }
-        .frame(height: 200)
+        .frame(height: 150)
         .background(Color.white.opacity(0.06))
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.15), lineWidth: 1))
