@@ -46,7 +46,18 @@ struct ActivityDetailView: View {
 
     private var hasHeartRate: Bool { (activity.heartrate?.count ?? 0) > 10 }
     private var hasPower: Bool { chartData.contains(where: { $0.power > 0 }) }
-    private var hasGPS: Bool { activity.gps.count > 1 }
+    // Strict threshold: MapPolyline on iOS 26 crashes the view when
+    // it gets fewer than ~5 coords. Track rides of a handful of
+    // seconds were tripping this — bumped from 1 to 5 to be safe.
+    private var hasGPS: Bool { activity.gps.count >= 5 }
+    /// Locally-recorded rides have negative ids (we encode the launch
+    /// timestamp as -unix). Strava-sourced rides have positive ids.
+    /// Only locals can be deleted from the app since they're not on
+    /// the server.
+    private var isLocalRide: Bool { activity.id < 0 }
+    @Environment(AppEnvironment.self) private var environment
+    @Environment(\.dismiss) private var dismiss
+    @State private var showDeleteConfirm: Bool = false
     /// Domain ceiling for every chart's `chartXScale`. Swift Charts
     /// crashes (FATAL: closed range with 0 width) when the domain is
     /// 0...0, and renders badly when it's 0...0.01. Floor at 0.5 km so
@@ -121,8 +132,29 @@ struct ActivityDetailView: View {
             ToolbarItem(placement: .principal) {
                 BrandLockup(compact: true)
             }
+            // Trash icon only for local rides (negative id = recorded
+            // by Track or saved at the end of Naviguer). Strava-sourced
+            // rides should be deleted on Strava, not here.
+            if isLocalRide {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
+                        showDeleteConfirm = true
+                    } label: {
+                        Image(systemName: "trash")
+                            .foregroundStyle(.red)
+                    }
+                }
+            }
         }
         .toolbarTitleDisplayMode(.inline)
+        .alert("Supprimer cette sortie ?", isPresented: $showDeleteConfirm) {
+            Button("Annuler", role: .cancel) {}
+            Button("Supprimer", role: .destructive) {
+                deleteLocalRide()
+            }
+        } message: {
+            Text("La sortie sera retirée de Petit Explorer (le workout dans l'app Santé reste, supprime-le là-bas si tu veux).")
+        }
         .onAppear {
             // Build chartData + derive hrRange once. This is the heavy
             // PowerStream pipeline (gradient + power model on the raw
@@ -373,6 +405,16 @@ struct ActivityDetailView: View {
     /// the drag hot path.
     private var hrRange: (min: Double, max: Double) {
         cachedHrRange
+    }
+
+    /// Remove this ride from the LocalRideStore + dismiss the view.
+    /// Only called for local (negative-id) rides — the toolbar button
+    /// that triggers it is hidden for Strava-sourced rides.
+    private func deleteLocalRide() {
+        environment.localRides.remove(id: activity.id, for: environment.currentUser)
+        environment.activityStore.refreshLocal(user: environment.currentUser)
+        Log.tracking.notice("deleted local ride id=\(activity.id)")
+        dismiss()
     }
 
     /// Computed once after chartData is built. Mirrors the previous
