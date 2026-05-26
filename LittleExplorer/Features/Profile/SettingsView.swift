@@ -16,6 +16,7 @@ struct SettingsView: View {
     @State private var saveIsError: Bool = false
 
     var body: some View {
+        @Bindable var env = environment
         Form {
             Section("Profil cycliste") {
                 LabeledField(label: "Poids du coureur (kg)", placeholder: "ex. 66", text: $riderKgText, keyboard: .decimalPad)
@@ -24,6 +25,24 @@ struct SettingsView: View {
                 Text("Laisse un champ vide pour revenir à la valeur par défaut.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+            }
+
+            Section("Apple Santé") {
+                Toggle(isOn: $env.healthKitEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Sync vers Apple Santé")
+                        Text("Chaque ride enregistré dans l'app est aussi écrit comme HKWorkout dans l'app Santé. Les anneaux d'activité Apple Watch sont crédités.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .tint(AppColors.terra)
+                .disabled(!HealthKitService.isAvailable)
+                if !HealthKitService.isAvailable {
+                    Text("Apple Santé n'est pas disponible sur cet appareil.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             if let msg = saveMessage {

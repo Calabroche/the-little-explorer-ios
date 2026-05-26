@@ -279,6 +279,7 @@ struct RideTrackerView: View {
         if let record = tracker.commitRecord(title: trimmed.isEmpty ? nil : trimmed) {
             environment.localRides.add(record, for: environment.currentUser)
             environment.activityStore.refreshLocal(user: environment.currentUser)
+            environment.saveRideToHealthKitIfEnabled(record)
         }
         tracker.reset()
         showSaveSheet = false
