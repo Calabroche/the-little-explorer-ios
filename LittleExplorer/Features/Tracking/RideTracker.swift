@@ -27,6 +27,14 @@ final class RideTracker {
     private(set) var maxSpeedKmh: Double = 0
     private(set) var path: [CLLocationCoordinate2D] = []
     private(set) var selectedSport: Sport?
+    /// Granular sport subtype the user picked (VTT, RPM, Pilates, …).
+    /// Stored on the resulting RideRecord as `originalType` so the
+    /// detail view can show the precise label and we don't lose the
+    /// distinction in the feed.
+    private(set) var selectedSubtype: SportSubtype?
+    /// True when the current ride is indoor (no GPS, no map). The
+    /// view reads this to swap its map view for a metrics-only one.
+    var isIndoor: Bool { selectedSubtype?.isOutdoor == false }
 
     /// Per-sample streams captured during the ride. Match the shape
     /// of `RideRecord.altitude / distanceM / speedKmh / timeS` so
@@ -57,22 +65,48 @@ final class RideTracker {
         self.watch = watch
     }
 
-    /// Start a ride for the given sport. The sport is captured in
-    /// the resulting RideRecord on save so it shows up in the right
-    /// activity bucket.
-    func start(sport: Sport) async {
+    /// Start a ride for the given subtype. Outdoor subtypes spin up
+    /// the GPS stream + Live Activity; indoor subtypes just start a
+    /// clock + a Live Activity with the sport name (no GPS = no
+    /// map, no distance). The resulting RideRecord at save time
+    /// carries the subtype's rawValue as `originalType` so detail
+    /// views can show "VTT" / "RPM" / "Pilates" instead of the
+    /// generic "Cyclisme" Sport bucket.
+    func start(subtype: SportSubtype) async {
         guard phase == .idle else { return }
-        location.requestAuthorization()
-        selectedSport = sport
+        selectedSubtype = subtype
+        selectedSport = subtype.canonicalSport
         startedAt = .now
         phase = .recording
-        await activityManager.start(sportLabel: sport.displayName)
+        await activityManager.start(sportLabel: subtype.displayName)
         startClock()
-        trackingTask = Task { [stream = location.startTracking()] in
-            for await loc in stream {
-                await self.ingest(loc)
+        if subtype.isOutdoor {
+            location.requestAuthorization()
+            trackingTask = Task { [stream = location.startTracking()] in
+                for await loc in stream {
+                    await self.ingest(loc)
+                }
             }
         }
+        // Indoor: no GPS stream — clock + activity manager carry the
+        // metrics (time, estimated calories via MET in commitRecord).
+    }
+
+    /// Legacy entry point — still used by the simulator-only sports
+    /// row preview / unit tests. Picks a sensible default subtype
+    /// for the Sport bucket. New callers should pass a SportSubtype.
+    func start(sport: Sport) async {
+        let subtype: SportSubtype
+        switch sport {
+        case .cycling:  subtype = .roadCycling
+        case .running:  subtype = .running
+        case .hiking:   subtype = .hiking
+        case .ski:      subtype = .alpineSki
+        case .snowshoe: subtype = .snowshoe
+        case .walking:  subtype = .walking
+        case .swim:     subtype = .swimming
+        }
+        await start(subtype: subtype)
     }
 
     func pause() {
@@ -149,7 +183,7 @@ final class RideTracker {
         return RideRecord(
             id: -Int(startedAt.timeIntervalSince1970),  // negative timestamp keeps local ids out of Strava's positive id space
             type: backendType(for: sport),
-            originalType: nil,
+            originalType: selectedSubtype?.rawValue,
             title: title,
             date: displayDate,
             rawDate: isoFormatter.string(from: startedAt),
@@ -210,6 +244,7 @@ final class RideTracker {
         lastLocation = nil
         startedAt = nil
         selectedSport = nil
+        selectedSubtype = nil
     }
 
     // MARK: - Private
