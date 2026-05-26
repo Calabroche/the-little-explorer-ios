@@ -44,6 +44,11 @@ struct ActivityDetailView: View {
     /// appear (same pass as chartData) so we don't re-walk the
     /// stream on every body recomputation.
     @State private var detectedClimbs: [Climb] = []
+    /// Index of the climb currently highlighted on the route map.
+    /// Tap a climb row to set; tap again to clear. Drives the
+    /// `highlightSegment` prop on RouteAnalysisMap so the segment
+    /// lights up below the Climbs card.
+    @State private var selectedClimbIdx: Int?
 
     /// Cached + pre-warmed haptic generator so each selection snap
     /// fires in <1ms instead of allocating a new generator each time.
@@ -128,7 +133,18 @@ struct ActivityDetailView: View {
                 }
                 if hasGPS {
                     cardWrapper(label: "CARTE DU TRAJET") {
-                        RouteAnalysisMap(activity: activity)
+                        // Highlight the selected climb's GPS segment on the
+                        // map so the user can locate it without scrolling
+                        // back up to the chart. Tap a climb row in the
+                        // Climbs card → segment lights up here.
+                        RouteAnalysisMap(
+                            activity: activity,
+                            highlightSegment: selectedClimbIdx.flatMap { idx in
+                                guard detectedClimbs.indices.contains(idx) else { return nil }
+                                let c = detectedClimbs[idx]
+                                return (startIdx: c.startIndex, endIdx: c.endIndex)
+                            },
+                        )
                     }
                 }
                 summaryRow
@@ -758,8 +774,12 @@ struct ActivityDetailView: View {
                             : 0
                         selectedDist = midDistKm
                         activeChart = .altitude
+                        // Toggle the map highlight — tap a row to light
+                        // up the GPS segment on the map below; tap
+                        // again to dismiss.
+                        selectedClimbIdx = (selectedClimbIdx == idx) ? nil : idx
                     } label: {
-                        climbRow(idx: idx + 1, climb: climb)
+                        climbRow(idx: idx + 1, climb: climb, selected: selectedClimbIdx == idx)
                     }
                     .buttonStyle(.plain)
                     if idx < detectedClimbs.count - 1 {
@@ -770,7 +790,7 @@ struct ActivityDetailView: View {
         }
     }
 
-    private func climbRow(idx: Int, climb: Climb) -> some View {
+    private func climbRow(idx: Int, climb: Climb, selected: Bool = false) -> some View {
         HStack(spacing: 14) {
             // Numbered chevron pill — the visual marker for "this is
             // climb N on the ride".
@@ -800,7 +820,20 @@ struct ActivityDetailView: View {
                 }
             }
         }
-        .padding(.vertical, 4)
+        .padding(.vertical, 6)
+        .padding(.horizontal, selected ? 8 : 0)
+        // Selected state: subtle terra-tinted background + outline so
+        // the user sees which row currently maps to the highlighted
+        // segment below. Animated so toggling reads smoothly.
+        .background(
+            RoundedRectangle(cornerRadius: 4)
+                .fill(selected ? AppColors.terra.opacity(0.08) : Color.clear),
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 4)
+                .stroke(selected ? AppColors.terra : Color.clear, lineWidth: 1.5),
+        )
+        .animation(.easeInOut(duration: 0.18), value: selected)
     }
 
     private func climbStat(value: String, label: String) -> some View {

@@ -12,14 +12,21 @@ import SwiftUI
 struct RouteAnalysisMap: View {
     let activity: RideRecord
     var height: CGFloat = 380
+    /// Optional climb / segment to highlight on top of the base
+    /// route. Indices are into the activity's gps array; we clamp
+    /// defensively. Used by ActivityDetailView when the user taps
+    /// a climb in the Climbs card — the matching stretch lights up
+    /// here so the eye can locate it on the map.
+    var highlightSegment: (startIdx: Int, endIdx: Int)? = nil
 
     @State private var cameraPosition: MapCameraPosition
     @State private var hovered: Hovered?
     @State private var clearTask: Task<Void, Never>?
 
-    init(activity: RideRecord, height: CGFloat = 380) {
+    init(activity: RideRecord, height: CGFloat = 380, highlightSegment: (startIdx: Int, endIdx: Int)? = nil) {
         self.activity = activity
         self.height = height
+        self.highlightSegment = highlightSegment
         let positions = activity.gps
         let region: MKCoordinateRegion = {
             guard !positions.isEmpty else {
@@ -85,6 +92,21 @@ struct RouteAnalysisMap: View {
                 MapPolyline(coordinates: segments[i].coords.map(\.clLocation))
                     .stroke(segments[i].color, lineWidth: 5)
             }
+
+            // Climb highlight — drawn after the base segments so it
+            // sits on top. Two layers: a soft semi-transparent halo
+            // (mimics the web's "glow") then a punchy core stroke.
+            // Indices clamped into the GPS array length.
+            if let highlight = highlightSegment {
+                let coords = clampedHighlightCoordinates(highlight)
+                if coords.count > 1 {
+                    MapPolyline(coordinates: coords)
+                        .stroke(AppColors.terra.opacity(0.35), style: StrokeStyle(lineWidth: 14, lineCap: .round))
+                    MapPolyline(coordinates: coords)
+                        .stroke(AppColors.terra, style: StrokeStyle(lineWidth: 7, lineCap: .round))
+                }
+            }
+
             if let hovered {
                 Annotation("", coordinate: hovered.coordinate) {
                     Circle()
@@ -95,6 +117,20 @@ struct RouteAnalysisMap: View {
             }
         }
         .mapStyle(.standard(elevation: .flat, pointsOfInterest: .excludingAll))
+    }
+
+    /// Convert a (startIdx, endIdx) tuple into a CLLocationCoordinate2D
+    /// array that's safe to render — clamps each index into the GPS
+    /// array's bounds (Strava sometimes returns slightly mismatched
+    /// stream lengths so a climb's endIndex can momentarily point
+    /// past `gps.count`).
+    private func clampedHighlightCoordinates(_ highlight: (startIdx: Int, endIdx: Int)) -> [CLLocationCoordinate2D] {
+        let positions = activity.gps
+        guard !positions.isEmpty else { return [] }
+        let s = max(0, min(highlight.startIdx, positions.count - 1))
+        let e = max(s, min(highlight.endIdx, positions.count - 1))
+        if e - s < 1 { return [] }
+        return positions[s...e].map(\.clLocation)
     }
 
     // MARK: - Sample popup
