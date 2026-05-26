@@ -178,7 +178,7 @@ private struct FeedScrollView: View {
 
         ScrollViewReader { proxy in
             ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
+                VStack(alignment: .leading, spacing: 18) {
                     // Invisible anchor at the very top — the brand-tap
                     // action scrolls back to this id.
                     Color.clear
@@ -191,9 +191,10 @@ private struct FeedScrollView: View {
                         activities: filtered,
                     )
                     .padding(.horizontal, 16)
+                    .padding(.top, -10)   // tighten the gap to the BrandHeader
 
                     if availableSports.count > 1 {
-                        SportPicker(sport: $env.selectedSport, available: availableSports)
+                        SportPickerAccordion(sport: $env.selectedSport, available: availableSports)
                             .padding(.horizontal, 16)
                     }
 
@@ -236,7 +237,8 @@ private struct FeedScrollView: View {
                         }
                     }
                 }
-                .padding(.vertical, 16)
+                .padding(.top, 4)
+                .padding(.bottom, 16)
             }
             .navigationDestination(for: RideRecord.self) { record in
                 ActivityDetailView(activity: record)
@@ -432,6 +434,90 @@ private struct FeedHero: View {
 
 // MARK: - Sport picker
 
+/// Accordion-style sport selector. Collapsed: a single capsule
+/// showing the active sport with a chevron-down. Tapped: the rest of
+/// the available sports unfold below the header. Tapping any sport
+/// (or the header again) collapses the accordion. Takes one row of
+/// vertical space when closed instead of a wide scrolling chip strip.
+private struct SportPickerAccordion: View {
+    @Binding var sport: Sport
+    let available: [Sport]
+    @State private var expanded: Bool = false
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            header
+            if expanded {
+                Divider().background(AppColors.creamBorder)
+                VStack(spacing: 2) {
+                    ForEach(available.filter { $0 != sport }) { option in
+                        Button {
+                            withAnimation(.easeInOut(duration: 0.22)) {
+                                sport = option
+                                expanded = false
+                            }
+                        } label: {
+                            row(for: option, isSelected: false)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.vertical, 6)
+                .transition(.opacity.combined(with: .move(edge: .top)))
+            }
+        }
+        .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(AppColors.creamBorder, lineWidth: 1))
+    }
+
+    private var header: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.22)) {
+                expanded.toggle()
+            }
+        } label: {
+            HStack(spacing: 10) {
+                Image(systemName: sport.symbol)
+                    .font(.system(size: 14).weight(.semibold))
+                    .foregroundStyle(.white)
+                    .frame(width: 30, height: 30)
+                    .background(sport.color, in: Circle())
+                Text(sport.displayName)
+                    .font(.system(.body, design: .serif).weight(.bold))
+                    .foregroundStyle(AppColors.ink)
+                Spacer()
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 11).weight(.bold))
+                    .rotationEffect(.degrees(expanded ? 180 : 0))
+                    .foregroundStyle(AppColors.inkLight)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func row(for option: Sport, isSelected: Bool) -> some View {
+        HStack(spacing: 10) {
+            Image(systemName: option.symbol)
+                .font(.system(size: 12).weight(.semibold))
+                .foregroundStyle(option.color)
+                .frame(width: 26, height: 26)
+                .background(option.color.opacity(0.15), in: Circle())
+            Text(option.displayName)
+                .font(.system(.body).weight(.medium))
+                .foregroundStyle(AppColors.inkMid)
+            Spacer()
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .contentShape(Rectangle())
+    }
+}
+
+/// Legacy horizontal chip strip — kept for any place that still wants
+/// it (none right now). The accordion above is the default for the
+/// Feed.
 private struct SportPicker: View {
     @Binding var sport: Sport
     let available: [Sport]
