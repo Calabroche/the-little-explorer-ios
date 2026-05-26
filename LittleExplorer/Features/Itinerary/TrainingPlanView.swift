@@ -307,22 +307,33 @@ struct TrainingPlanView: View {
     }
 
     private func chart(result: PlanResult) -> some View {
-        let baseline = baselineWeeklyTss().tss
-        return Chart {
-            ForEach(result.weeks) { week in
-                BarMark(
-                    x: .value("Semaine", "S\(week.index)"),
-                    y: .value("TSS", week.totalTss),
-                )
-                .foregroundStyle(week.phase.color)
-                .cornerRadius(3)
+        // Visual progression of WEEKLY KM (was TSS). User asked for
+        // distance to be the primary metric: "tel et tel semaine je
+        // dois faire tant de kms sur la semaine". TSS stays as a
+        // small secondary number on each week card.
+        VStack(alignment: .leading, spacing: 8) {
+            Text("VOLUME HEBDOMADAIRE (KM)")
+                .font(.system(size: 10).weight(.bold)).tracking(1.4)
+                .foregroundStyle(AppColors.inkLight)
+            Chart {
+                ForEach(result.weeks) { week in
+                    BarMark(
+                        x: .value("Semaine", "S\(week.index)"),
+                        y: .value("KM", week.totalKm),
+                    )
+                    .foregroundStyle(week.phase.color)
+                    .cornerRadius(3)
+                    .annotation(position: .top, alignment: .center) {
+                        Text("\(week.totalKm)")
+                            .font(.system(size: 9).weight(.bold))
+                            .foregroundStyle(week.phase.color)
+                            .monospacedDigit()
+                    }
+                }
             }
-            RuleMark(y: .value("Baseline", baseline))
-                .foregroundStyle(AppColors.inkLight.opacity(0.5))
-                .lineStyle(StrokeStyle(lineWidth: 1, dash: [4, 4]))
+            .frame(height: 160)
         }
-        .frame(height: 160)
-        .padding(10)
+        .padding(12)
         .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 4))
         .overlay(RoundedRectangle(cornerRadius: 4).stroke(AppColors.creamBorder, lineWidth: 1))
     }
@@ -357,10 +368,18 @@ struct TrainingPlanView: View {
                 }
                 Text(weekRangeLabel(week))
                     .font(.system(size: 10)).foregroundStyle(AppColors.inkLight)
-                HStack(spacing: 16) {
-                    statMini(label: "TSS",  value: "\(week.totalTss)",  color: week.phase.color)
-                    statMini(label: "KM",   value: "\(week.totalKm)",   color: AppColors.ink)
-                    statMini(label: "D+",   value: "\(week.totalElev) m", color: AppColors.ink)
+
+                // Primary stat: KM hebdo, big and front. D+ next.
+                // TSS demoted to a small line below — it's how the
+                // engine sizes the load but the user wants to see
+                // "fais 80 km cette semaine".
+                HStack(alignment: .firstTextBaseline, spacing: 14) {
+                    statBig(label: "KM HEBDO", value: "\(week.totalKm)", unit: "km", color: week.phase.color)
+                    statMini(label: "D+",      value: "\(week.totalElev) m", color: AppColors.ink)
+                    Spacer()
+                    Text("TSS \(week.totalTss)")
+                        .font(.system(size: 10).weight(.semibold))
+                        .foregroundStyle(AppColors.inkLight)
                 }
                 dayGrid(week: week)
             }
@@ -371,6 +390,10 @@ struct TrainingPlanView: View {
         .background(AppColors.creamDark, in: RoundedRectangle(cornerRadius: 3))
     }
 
+    /// Day-by-day grid: each cell shows the planned KM for that day.
+    /// User asked specifically for "le nbre de km pour le lundi le
+    /// mardi etc". Cell color still tracks TSS internally for
+    /// intensity, but the number on the cell is km.
     private func dayGrid(week: WeekPlan) -> some View {
         HStack(spacing: 3) {
             ForEach(week.days, id: \.dow) { day in
@@ -380,18 +403,38 @@ struct TrainingPlanView: View {
                         .foregroundStyle(AppColors.inkLight)
                     Rectangle()
                         .fill(dayColor(day: day, phase: week.phase))
-                        .frame(height: 18)
+                        .frame(height: 22)
                         .cornerRadius(2)
                         .overlay(
-                            Text(day.tss > 0 ? "\(day.tss)" : "")
-                                .font(.system(size: 8).weight(.bold))
-                                .foregroundStyle(day.tss > 30 ? .white : AppColors.inkMid),
+                            dayCellLabel(day: day),
                         )
                 }
                 .frame(maxWidth: .infinity)
             }
         }
-        .padding(.top, 2)
+        .padding(.top, 4)
+    }
+
+    @ViewBuilder
+    private func dayCellLabel(day: DayPlan) -> some View {
+        if day.km > 0 {
+            VStack(spacing: 0) {
+                Text("\(day.km)")
+                    .font(.system(size: 10).weight(.heavy))
+                    .monospacedDigit()
+                    .foregroundStyle(day.tss > 30 ? .white : AppColors.ink)
+                Text("km")
+                    .font(.system(size: 7))
+                    .foregroundStyle(day.tss > 30 ? .white.opacity(0.85) : AppColors.inkMid)
+            }
+        } else if day.tss > 0 {
+            // Race-week "openers" / "recovery" days that have a TSS
+            // load but ~no distance — surface a dash so the cell
+            // doesn't look empty.
+            Text("—")
+                .font(.system(size: 10).weight(.bold))
+                .foregroundStyle(AppColors.inkLight)
+        }
     }
 
     private func dayLabel(_ dow: Int) -> String {
@@ -408,6 +451,22 @@ struct TrainingPlanView: View {
         VStack(alignment: .leading, spacing: 1) {
             Text(label).font(.system(size: 8).weight(.bold)).tracking(0.8).foregroundStyle(AppColors.inkLight)
             Text(value).font(.system(.callout, design: .serif).weight(.bold)).foregroundStyle(color)
+        }
+    }
+
+    /// Bigger stat used for the primary number on a week card. Same
+    /// look as statMini but the value is title2 weight heavy + the
+    /// unit sits inline at a smaller size.
+    private func statBig(label: String, value: String, unit: String, color: Color) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(label).font(.system(size: 9).weight(.bold)).tracking(1.0).foregroundStyle(AppColors.inkLight)
+            HStack(alignment: .firstTextBaseline, spacing: 3) {
+                Text(value)
+                    .font(.system(.title2, design: .serif).weight(.heavy))
+                    .foregroundStyle(color)
+                    .monospacedDigit()
+                Text(unit).font(.system(size: 10)).foregroundStyle(AppColors.inkLight)
+            }
         }
     }
 

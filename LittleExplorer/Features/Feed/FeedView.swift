@@ -187,16 +187,12 @@ private struct FeedScrollView: View {
 
                     FeedHero(
                         userName: env.session.profile?.name,
-                        sport: env.selectedSport,
+                        sport: $env.selectedSport,
+                        availableSports: availableSports,
                         activities: filtered,
                     )
                     .padding(.horizontal, 16)
                     .padding(.top, -10)   // tighten the gap to the BrandHeader
-
-                    if availableSports.count > 1 {
-                        SportPickerAccordion(sport: $env.selectedSport, available: availableSports)
-                            .padding(.horizontal, 16)
-                    }
 
                     Last5StatsView(activities: filtered).padding(.horizontal, 16)
                     ActivityCalendarView(activities: filtered).padding(.horizontal, 16)
@@ -262,7 +258,8 @@ private struct FeedScrollView: View {
 /// data, much more visible.
 private struct FeedHero: View {
     let userName: String?
-    let sport: Sport
+    @Binding var sport: Sport
+    let availableSports: [Sport]
     let activities: [RideRecord]
     @State private var period: HeroPeriod = .month
 
@@ -330,9 +327,19 @@ private struct FeedHero: View {
                         .foregroundStyle(AppColors.inkMid)
                 }
             }
-            Text(monthYearLabel)
-                .font(.system(.largeTitle, design: .serif).weight(.heavy))
-                .foregroundStyle(AppColors.ink)
+            // Month/year on the left, sport accordion on the right —
+            // they share the same baseline so the picker is right next
+            // to "Mai 2026" instead of taking a separate row below.
+            HStack(alignment: .center, spacing: 12) {
+                Text(monthYearLabel)
+                    .font(.system(.largeTitle, design: .serif).weight(.heavy))
+                    .foregroundStyle(AppColors.ink)
+                Spacer(minLength: 6)
+                if availableSports.count > 1 {
+                    SportPickerAccordion(sport: $sport, available: availableSports)
+                        .frame(maxWidth: 180, alignment: .trailing)
+                }
+            }
         }
     }
 
