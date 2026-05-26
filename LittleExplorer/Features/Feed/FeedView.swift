@@ -185,13 +185,17 @@ private struct FeedScrollView: View {
                         .frame(height: 1)
                         .id(Self.scrollAnchorID)
 
+                    FeedHero(
+                        userName: env.session.profile?.name,
+                        sport: env.selectedSport,
+                        activities: filtered,
+                    )
+                    .padding(.horizontal, 16)
+
                     if availableSports.count > 1 {
                         SportPicker(sport: $env.selectedSport, available: availableSports)
                             .padding(.horizontal, 16)
                     }
-
-                    headline(activities: filtered)
-                        .padding(.horizontal, 16)
 
                     Last5StatsView(activities: filtered).padding(.horizontal, 16)
                     ActivityCalendarView(activities: filtered).padding(.horizontal, 16)
@@ -245,18 +249,184 @@ private struct FeedScrollView: View {
         }
     }
 
-    private func headline(activities: [RideRecord]) -> some View {
-        let totalKm = activities.compactMap(\.distance).reduce(0, +)
-        let totalElev = activities.compactMap(\.elevation).reduce(0, +)
-        return VStack(alignment: .leading, spacing: 4) {
-            Text("\(activities.count) sorties")
+}
+
+// MARK: - Hero (greeting + period stats card)
+
+/// Editorial top-of-feed module: a time-of-day greeting, the current
+/// month in a serif headline, and a period-scoped stats card showing
+/// the totals (sorties / km / D+ / heures) for the active sport.
+/// Replaces the previous plain "X sorties · Y km" text block — same
+/// data, much more visible.
+private struct FeedHero: View {
+    let userName: String?
+    let sport: Sport
+    let activities: [RideRecord]
+    @State private var period: HeroPeriod = .month
+
+    enum HeroPeriod: String, CaseIterable, Identifiable {
+        case month, last30, last90, year, all
+        var id: String { rawValue }
+
+        var label: String {
+            switch self {
+            case .month:  return "Ce mois"
+            case .last30: return "30 j"
+            case .last90: return "3 mois"
+            case .year:   return "2026"
+            case .all:    return "Tout"
+            }
+        }
+
+        /// Activities matching this period — uses local-tz comparison
+        /// against the rawDate ISO string.
+        func filter(_ activities: [RideRecord], now: Date = .now) -> [RideRecord] {
+            let cal = Calendar.current
+            let formatter = ISO8601DateFormatter()
+            formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            return activities.filter { record in
+                let date: Date? = formatter.date(from: record.rawDate)
+                    ?? ISO8601DateFormatter().date(from: record.rawDate)
+                guard let date else { return false }
+                switch self {
+                case .month:
+                    return cal.isDate(date, equalTo: now, toGranularity: .month)
+                case .year:
+                    return cal.isDate(date, equalTo: now, toGranularity: .year)
+                case .last30:
+                    let cutoff = cal.date(byAdding: .day, value: -30, to: now) ?? now
+                    return date >= cutoff
+                case .last90:
+                    let cutoff = cal.date(byAdding: .day, value: -90, to: now) ?? now
+                    return date >= cutoff
+                case .all:
+                    return true
+                }
+            }
+        }
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            greetingBlock
+            statsCard
+        }
+    }
+
+    // MARK: - Greeting + month/year
+
+    @ViewBuilder
+    private var greetingBlock: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 4) {
+                Text(greeting)
+                    .font(.system(size: 13).weight(.semibold))
+                    .foregroundStyle(AppColors.inkLight)
+                if let firstName {
+                    Text(firstName)
+                        .font(.system(size: 13).weight(.bold))
+                        .foregroundStyle(AppColors.inkMid)
+                }
+            }
+            Text(monthYearLabel)
                 .font(.system(.largeTitle, design: .serif).weight(.heavy))
                 .foregroundStyle(AppColors.ink)
-            Text("\(Int(totalKm)) km · \(Int(totalElev)) m D+")
-                .font(.system(.title2, design: .serif).weight(.bold).italic())
-                .foregroundStyle(AppColors.terra)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var greeting: String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        switch hour {
+        case 5..<12:  return "Bonjour"
+        case 12..<18: return "Bel après-midi"
+        default:      return "Bonsoir"
+        }
+    }
+
+    private var firstName: String? {
+        userName?.split(separator: " ").first.map(String.init)
+    }
+
+    private var monthYearLabel: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM yyyy"
+        formatter.locale = Locale(identifier: "fr_FR")
+        return formatter.string(from: Date()).capitalized
+    }
+
+    // MARK: - Period stats card
+
+    private var statsCard: some View {
+        let scoped = period.filter(activities)
+        let totalKm   = scoped.compactMap(\.distance).reduce(0, +)
+        let totalElev = scoped.compactMap(\.elevation).reduce(0, +)
+        let totalMin  = scoped.map(\.durationMin).reduce(0, +)
+        let hours = Double(totalMin) / 60
+        let totalDuration = totalMin >= 60
+            ? String(format: "%dh %02d", totalMin / 60, totalMin % 60)
+            : "\(totalMin) min"
+        let avgSpeed: Double? = hours > 0 ? totalKm / hours : nil
+
+        return VStack(alignment: .leading, spacing: 14) {
+            // Period selector chip row.
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(HeroPeriod.allCases) { p in
+                        Button {
+                            period = p
+                        } label: {
+                            Text(p.label)
+                                .font(.system(size: 11).weight(period == p ? .bold : .medium))
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(period == p ? AppColors.terra : AppColors.creamDark, in: Capsule())
+                                .overlay(Capsule().stroke(AppColors.creamBorder, lineWidth: 1))
+                                .foregroundStyle(period == p ? Color.white : AppColors.inkMid)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+
+            // 3-column big stats row.
+            HStack(spacing: 0) {
+                heroStat(value: "\(scoped.count)",        unit: "SORTIES")
+                Divider().frame(height: 36).background(AppColors.creamBorder)
+                heroStat(value: "\(Int(totalKm.rounded()))", unit: "KM")
+                Divider().frame(height: 36).background(AppColors.creamBorder)
+                heroStat(value: "\(Int(totalElev.rounded()))", unit: "M D+")
+            }
+
+            // Secondary line: total time + avg speed.
+            HStack(spacing: 12) {
+                Label(totalDuration, systemImage: "clock")
+                    .font(.system(size: 11).weight(.semibold))
+                    .foregroundStyle(AppColors.inkMid)
+                if let avgSpeed {
+                    Label(String(format: "%.1f km/h", avgSpeed), systemImage: "speedometer")
+                        .font(.system(size: 11).weight(.semibold))
+                        .foregroundStyle(AppColors.inkMid)
+                }
+                Spacer()
+            }
+        }
+        .padding(14)
+        .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 10).stroke(AppColors.creamBorder, lineWidth: 1))
+    }
+
+    private func heroStat(value: String, unit: String) -> some View {
+        VStack(spacing: 2) {
+            Text(value)
+                .font(.system(.title, design: .serif).weight(.heavy))
+                .foregroundStyle(AppColors.ink)
+                .monospacedDigit()
+                .lineLimit(1).minimumScaleFactor(0.6)
+            Text(unit)
+                .font(.system(size: 9).weight(.bold)).tracking(1.2)
+                .foregroundStyle(AppColors.inkLight)
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 
@@ -268,31 +438,29 @@ private struct SportPicker: View {
 
     var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 ForEach(available) { option in
                     let isActive = sport == option
                     Button {
                         sport = option
                     } label: {
-                        HStack(spacing: 5) {
-                            Image(systemName: option.symbol).font(.system(size: 11))
-                            Text(option.displayName).font(.system(size: 11).weight(isActive ? .bold : .medium))
+                        HStack(spacing: 7) {
+                            Image(systemName: option.symbol).font(.system(size: 13).weight(.semibold))
+                            Text(option.displayName).font(.system(size: 13).weight(isActive ? .bold : .medium))
                         }
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
                         .background(
-                            RoundedRectangle(cornerRadius: 4)
-                                .fill(isActive ? AppColors.terra : Color.clear),
+                            Capsule().fill(isActive ? option.color : AppColors.surface),
                         )
+                        .overlay(Capsule().stroke(isActive ? Color.clear : AppColors.creamBorder, lineWidth: 1))
                         .foregroundStyle(isActive ? Color.white : AppColors.inkMid)
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .padding(4)
+            .padding(.vertical, 2)
         }
-        .background(AppColors.creamDark, in: RoundedRectangle(cornerRadius: 5))
-        .overlay(RoundedRectangle(cornerRadius: 5).stroke(AppColors.creamBorder, lineWidth: 1))
     }
 }
 
