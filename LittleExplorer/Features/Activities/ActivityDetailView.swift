@@ -47,7 +47,13 @@ struct ActivityDetailView: View {
     private var hasHeartRate: Bool { (activity.heartrate?.count ?? 0) > 10 }
     private var hasPower: Bool { chartData.contains(where: { $0.power > 0 }) }
     private var hasGPS: Bool { activity.gps.count > 1 }
-    private var maxDistKm: Double { chartData.last?.distKm ?? activity.distance ?? 1 }
+    /// Domain ceiling for every chart's `chartXScale`. Swift Charts
+    /// crashes (FATAL: closed range with 0 width) when the domain is
+    /// 0...0, and renders badly when it's 0...0.01. Floor at 0.5 km so
+    /// the axes stay sane even on tiny rides.
+    private var maxDistKm: Double {
+        max(0.5, chartData.last?.distKm ?? activity.distance ?? 1)
+    }
 
     /// Closest sample to the user's drag-selected X position (used by
     /// every chart's RuleMark + popup annotation).
@@ -63,21 +69,37 @@ struct ActivityDetailView: View {
                 topStatsCard
                 if activity.np != nil { ftpCard }
 
-                // Scrub card now rides immediately above the chart the
-                // user last touched. Helper renders it conditionally
-                // for each chart's spot in the stack.
-                if hasHeartRate {
-                    scrubCardSlot(for: .hr)
-                    hrSlopeChart
+                // Charts are gated behind `!chartData.isEmpty` so a
+                // very short Track ride (e.g. a 10 m shakedown that
+                // produced fewer than the 10 GPS samples PowerStream
+                // needs) doesn't try to render Swift Charts with an
+                // empty data set + a near-zero chartXScale domain —
+                // that combo crashes the detail view on iOS 26.
+                if !chartData.isEmpty {
+                    if hasHeartRate {
+                        scrubCardSlot(for: .hr)
+                        hrSlopeChart
+                    }
+                    scrubCardSlot(for: .speed)
+                    speedChart
+                    if hasPower {
+                        scrubCardSlot(for: .power)
+                        powerChart
+                    }
+                    scrubCardSlot(for: .altitude)
+                    elevationChart
+                } else {
+                    cardWrapper(label: "DONNÉES") {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Trop peu d'échantillons GPS pour tracer les courbes.")
+                                .font(.system(size: 12))
+                                .foregroundStyle(AppColors.inkMid)
+                            Text("Roule au moins 30 s — Health + le local store gardent quand même un workout complet.")
+                                .font(.caption)
+                                .foregroundStyle(AppColors.inkLight)
+                        }
+                    }
                 }
-                scrubCardSlot(for: .speed)
-                speedChart
-                if hasPower {
-                    scrubCardSlot(for: .power)
-                    powerChart
-                }
-                scrubCardSlot(for: .altitude)
-                elevationChart
 
                 if let zones = activity.hrZones { hrZonesCard(zones: zones) }
                 if hasGPS {
