@@ -786,6 +786,25 @@ struct ActivityDetailView: View {
                         Divider().background(AppColors.creamBorder)
                     }
                 }
+
+                // NB explaining the strict thresholds — same wording as
+                // the web AnalysisPage. Visible at the bottom of every
+                // climbs card so a missing kicker isn't read as a bug.
+                Divider().background(AppColors.creamBorder).padding(.top, 4)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack(spacing: 4) {
+                        Text("NB —")
+                            .font(.system(size: 11).weight(.bold))
+                            .foregroundStyle(AppColors.inkMid)
+                        Text("seuils volontairement stricts")
+                            .font(.system(size: 11))
+                            .foregroundStyle(AppColors.inkLight)
+                    }
+                    Text("≥ 500 m, ≥ 30 m de gain, ≥ 3 % de pente moyenne. Les petits raidards (kickers < 500 m, même à 8-10 %) sont délibérément ignorés pour ne lister que les vraies montées. Altitude lissée sur 30 pts ; pente max sur fenêtre glissante 100 m.")
+                        .font(.system(size: 10))
+                        .foregroundStyle(AppColors.inkLight)
+                        .lineSpacing(2)
+                }
             }
         }
     }
