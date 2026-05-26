@@ -36,15 +36,27 @@ final class AppEnvironment {
         self.session = SessionStore()
     }
 
-    /// Fire-and-forget HealthKit save. Wrapped here so call sites
-    /// (RideTracker save, NavigateView save dialog) don't each have to
-    /// check the toggle + handle auth + swallow errors. Silent failure
-    /// is fine — the local copy of the ride is already persisted.
+    /// Fire-and-forget HealthKit save. Each step is logged so the user
+    /// can verify in Profil → Diagnostics exactly where the chain
+    /// stops (most common cause of "nothing in the Health app" is
+    /// either the toggle being off or the system permission being
+    /// denied — Apple doesn't let us tell denial from grant via the
+    /// API, but we surface enough breadcrumbs to spot it).
     func saveRideToHealthKitIfEnabled(_ record: RideRecord) {
-        guard healthKitEnabled, HealthKitService.isAvailable else { return }
+        Log.tracking.notice("HealthKit: hook fired for ride id=\(record.id)")
+        guard healthKitEnabled else {
+            Log.tracking.notice("HealthKit: skip — toggle is off in Profil → Paramètres")
+            return
+        }
+        guard HealthKitService.isAvailable else {
+            Log.tracking.notice("HealthKit: skip — HKHealthStore.isHealthDataAvailable() is false")
+            return
+        }
         Task { @MainActor in
             do {
+                Log.tracking.notice("HealthKit: requesting authorization…")
                 try await healthKit.requestAuthorization()
+                Log.tracking.notice("HealthKit: authorization request returned, attempting save")
                 try await healthKit.saveRide(record)
             } catch {
                 Log.tracking.error("HealthKit save failed: \(error.localizedDescription, privacy: .public)")
