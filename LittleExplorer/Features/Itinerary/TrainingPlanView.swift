@@ -1,20 +1,40 @@
 import SwiftUI
 import Charts
 
-/// "Plan d'entraînement" — port of `src/components/explorer/TrainingPlan.tsx`.
-/// Builds a week-by-week TSS plan from a target distance + elevation +
-/// time window, anchored on the user's recent TSS baseline. Same
-/// algorithm (3:1 deload cycle with a 2-week race-week taper).
+/// "Plan d'entraînement" — adapts its inputs to the SportCategory.
+///   Vélo    → cible distance (km) + dénivelé (m) — l'algo TSS d'origine.
+///   Course  → cible distance (km) + allure (min/km) — TSS estimé par
+///             puissance d'effort liée à la VMA.
+///   Snow / Water / Indoor → placeholder pour l'instant.
 struct TrainingPlanView: View {
+    let category: SportCategory
     @Environment(AppEnvironment.self) private var environment
 
     @State private var targetKm: Double = 100
     @State private var targetElev: Double = 1500
+    /// Target running pace expressed in seconds per km. Slider works
+    /// in seconds so the conversion stays in one place; UI formats
+    /// it back to "5:30 /km".
+    @State private var targetPaceSecPerKm: Double = 5 * 60   // 5:00 /km default
     @State private var startDate: Date = Date()
     @State private var targetDate: Date = Calendar.current.date(byAdding: .day, value: 56, to: Date()) ?? Date()
     @State private var generated: Bool = false
 
+    init(category: SportCategory = .cycling) {
+        self.category = category
+    }
+
     var body: some View {
+        switch category {
+        case .cycling: cyclingBody
+        case .footing: runningBody
+        case .snow, .water, .indoor: placeholderBody
+        }
+    }
+
+    // MARK: - Cycling (original TSS plan)
+
+    private var cyclingBody: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 header
@@ -31,6 +51,143 @@ struct TrainingPlanView: View {
             .padding(.vertical, 16)
         }
         .background(AppColors.cream)
+    }
+
+    // MARK: - Running variant (pace target instead of elevation)
+
+    private var runningBody: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                runningHeader
+                runningIntro
+                runningForm
+                generateButton
+                if generated, let result = planResult {
+                    safeZoneBanner(result: result)
+                    chart(result: result)
+                    weeksList(result: result)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 16)
+        }
+        .background(AppColors.cream)
+    }
+
+    private var runningHeader: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 10) {
+                Text("§ PLAN").font(.system(size: 10).weight(.bold)).tracking(1.5).foregroundStyle(AppColors.green)
+                Rectangle().fill(AppColors.creamBorder).frame(width: 20, height: 1)
+                Text("PLAN COURSE À PIED").font(.system(size: 10).weight(.bold)).tracking(1.5).foregroundStyle(AppColors.inkMid)
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text("Construis ta course.")
+                    .font(.system(.title, design: .serif).weight(.heavy))
+                    .foregroundStyle(AppColors.ink)
+                Text("Distance + allure.")
+                    .font(.system(.title, design: .serif).weight(.bold).italic())
+                    .foregroundStyle(AppColors.green)
+            }
+            .padding(.top, 4)
+        }
+    }
+
+    private var runningIntro: some View {
+        Text("Renseigne ta distance cible (5k → semi → marathon) et ton allure cible. Je dimensionne la charge semaine par semaine en gardant le même cycle 3:1 + 2 semaines de taper que pour le vélo.")
+            .font(.system(size: 12)).foregroundStyle(AppColors.inkLight).lineSpacing(2)
+    }
+
+    private var runningForm: some View {
+        VStack(spacing: 14) {
+            slider(label: "OBJECTIF DISTANCE", value: $targetKm, range: 5...50, step: 1, unit: "km")
+            paceSlider(label: "ALLURE CIBLE", value: $targetPaceSecPerKm, range: 210...480, step: 5)
+            HStack(spacing: 12) {
+                datePickerCell(label: "DÉBUT DE PRÉPARATION", date: $startDate)
+                datePickerCell(label: "DATE DE L'OBJECTIF", date: $targetDate)
+            }
+        }
+        .padding(14)
+        .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(AppColors.creamBorder, lineWidth: 1))
+    }
+
+    /// Pace slider — value is seconds per km, display is mm:ss /km.
+    private func paceSlider(label: String, value: Binding<Double>, range: ClosedRange<Double>, step: Double) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(label).font(.system(size: 10).weight(.bold)).tracking(1.2).foregroundStyle(AppColors.inkLight)
+                Spacer()
+                HStack(alignment: .firstTextBaseline, spacing: 2) {
+                    Text(formatPace(value.wrappedValue))
+                        .font(.system(.title2, design: .serif).weight(.bold))
+                        .foregroundStyle(AppColors.ink)
+                    Text("/km").font(.system(size: 11)).foregroundStyle(AppColors.inkLight)
+                }
+            }
+            Slider(value: value, in: range, step: step)
+                .tint(AppColors.green)
+            HStack {
+                Text("3:30").font(.system(size: 9)).foregroundStyle(AppColors.inkLight)
+                Spacer()
+                Text("8:00").font(.system(size: 9)).foregroundStyle(AppColors.inkLight)
+            }
+        }
+    }
+
+    private func formatPace(_ secPerKm: Double) -> String {
+        let s = Int(secPerKm.rounded())
+        return String(format: "%d:%02d", s / 60, s % 60)
+    }
+
+    // MARK: - Placeholder for snow / water / indoor
+
+    private var placeholderBody: some View {
+        VStack(spacing: 18) {
+            Image(systemName: placeholderIcon)
+                .font(.system(size: 48))
+                .foregroundStyle(AppColors.terra)
+            Text(placeholderTitle)
+                .font(.system(.title2, design: .serif).weight(.heavy))
+                .foregroundStyle(AppColors.ink)
+            Text(placeholderBlurb)
+                .font(.system(.callout, design: .serif))
+                .foregroundStyle(AppColors.inkMid)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 32)
+            Text("Bientôt disponible")
+                .font(.system(size: 11).weight(.bold)).tracking(1.2)
+                .foregroundStyle(AppColors.terra)
+                .padding(.horizontal, 12).padding(.vertical, 6)
+                .background(AppColors.terraLight, in: Capsule())
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(AppColors.cream)
+    }
+
+    private var placeholderIcon: String {
+        switch category {
+        case .snow:   return "snowflake"
+        case .water:  return "drop.fill"
+        case .indoor: return "dumbbell.fill"
+        default:      return "sparkles"
+        }
+    }
+    private var placeholderTitle: String {
+        switch category {
+        case .snow:   return "Plan ski"
+        case .water:  return "Plan natation"
+        case .indoor: return "Plan séance indoor"
+        default:      return "Plan d'entraînement"
+        }
+    }
+    private var placeholderBlurb: String {
+        switch category {
+        case .snow:   return "Cycle d'entraînement pour ta sortie ski (alpin / nordique). Plans dédiés à venir."
+        case .water:  return "Séances bassin par distance + intervalles. À venir."
+        case .indoor: return "Plans de force, HIIT, RPM, yoga par durée + intensité. À venir."
+        default:      return "À venir."
+        }
     }
 
     // MARK: - Header + intro
@@ -267,10 +424,34 @@ struct TrainingPlanView: View {
         guard generated else { return nil }
         guard targetDate.timeIntervalSince(startDate) >= 2 * 86400 else { return nil }
         let baseline = Double(baselineWeeklyTss().tss)
-        let oneDayTss = targetKm * 2.5 + targetElev * 0.05
+
+        let oneDayTss: Double
+        let peakWeeklyKm: Double
+        let peakWeeklyElev: Double
+        let goalElev: Double
+
+        switch category {
+        case .footing:
+            // Running TSS model. Pace 5:00 /km is the "reference"
+            // (~7 TSS/km). Faster pace → higher TSS/km (squared so
+            // the curve climbs steeply for sub-4:00 efforts). No
+            // elevation target — runners think in pace, not D+.
+            let intensity = 300.0 / max(targetPaceSecPerKm, 180)
+            oneDayTss = targetKm * 7 * intensity * intensity
+            peakWeeklyKm = targetKm * 1.4
+            peakWeeklyElev = 0
+            goalElev = 0
+        case .cycling:
+            // Original cycling model: distance + elevation feed TSS.
+            oneDayTss = targetKm * 2.5 + targetElev * 0.05
+            peakWeeklyKm = targetKm * 1.6
+            peakWeeklyElev = targetElev * 1.5
+            goalElev = targetElev
+        default:
+            return nil
+        }
+
         let peakWeeklyTss = oneDayTss * 2.4
-        let peakWeeklyKm  = targetKm   * 1.6
-        let peakWeeklyElev = targetElev * 1.5
         return buildPlan(
             baseline: baseline,
             peakWeeklyTss: peakWeeklyTss,
@@ -278,7 +459,7 @@ struct TrainingPlanView: View {
             peakWeeklyElev: peakWeeklyElev,
             startDate: startDate,
             targetDate: targetDate,
-            goal: (km: targetKm, elev: targetElev, oneDayTss: oneDayTss),
+            goal: (km: targetKm, elev: goalElev, oneDayTss: oneDayTss),
         )
     }
 
