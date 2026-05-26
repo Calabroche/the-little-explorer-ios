@@ -40,6 +40,11 @@ struct ActivityDetailView: View {
     /// Recomputed in the same onAppear pass after chartData is ready.
     @State private var cachedHrRange: (min: Double, max: Double) = (80, 200)
 
+    /// Climbs auto-detected from the altitude stream. Computed once on
+    /// appear (same pass as chartData) so we don't re-walk the
+    /// stream on every body recomputation.
+    @State private var detectedClimbs: [Climb] = []
+
     /// Cached + pre-warmed haptic generator so each selection snap
     /// fires in <1ms instead of allocating a new generator each time.
     @State private var haptics = UIImpactFeedbackGenerator(style: .light)
@@ -118,6 +123,9 @@ struct ActivityDetailView: View {
                 }
 
                 if let zones = activity.hrZones { hrZonesCard(zones: zones) }
+                if !detectedClimbs.isEmpty {
+                    climbsCard
+                }
                 if hasGPS {
                     cardWrapper(label: "CARTE DU TRAJET") {
                         RouteAnalysisMap(activity: activity)
@@ -168,6 +176,15 @@ struct ActivityDetailView: View {
             if chartData.isEmpty {
                 chartData = PowerStream.build(from: activity)
                 cachedHrRange = computeHrRange()
+            }
+            if detectedClimbs.isEmpty,
+               let alt = activity.altitude,
+               let dist = activity.distanceM {
+                detectedClimbs = ClimbDetector.detect(
+                    altitude: alt,
+                    distanceM: dist,
+                    timeS: activity.timeS,
+                )
             }
             // Pre-warm the haptic engine so the first tick has zero
             // perceptible latency.
@@ -722,6 +739,88 @@ struct ActivityDetailView: View {
         .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 4))
         .overlay(RoundedRectangle(cornerRadius: 4).stroke(AppColors.creamBorder, lineWidth: 1))
         .shadow(color: .black.opacity(0.18), radius: 8, y: 2)
+    }
+
+    // MARK: - Climbs
+
+    /// Card listing all detected climbs on this ride. Each row shows
+    /// length, elevation gain, avg/max grade, and time. Tap row to
+    /// jump the chart selection to the climb's distance position
+    /// (so the user sees the elevation profile of that climb).
+    private var climbsCard: some View {
+        cardWrapper(label: "MONTÉES DÉTECTÉES") {
+            VStack(spacing: 10) {
+                ForEach(Array(detectedClimbs.enumerated()), id: \.offset) { idx, climb in
+                    Button {
+                        // Center the chart scrub on this climb's midpoint.
+                        let midDistKm = chartData.indices.contains(climb.startIndex)
+                            ? chartData[climb.startIndex].distKm
+                            : 0
+                        selectedDist = midDistKm
+                        activeChart = .altitude
+                    } label: {
+                        climbRow(idx: idx + 1, climb: climb)
+                    }
+                    .buttonStyle(.plain)
+                    if idx < detectedClimbs.count - 1 {
+                        Divider().background(AppColors.creamBorder)
+                    }
+                }
+            }
+        }
+    }
+
+    private func climbRow(idx: Int, climb: Climb) -> some View {
+        HStack(spacing: 14) {
+            // Numbered chevron pill — the visual marker for "this is
+            // climb N on the ride".
+            ZStack {
+                Circle().fill(AppColors.terra).frame(width: 30, height: 30)
+                Text("\(idx)")
+                    .font(.system(size: 13).weight(.heavy))
+                    .foregroundStyle(.white)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 8) {
+                    Text(climb.name)
+                        .font(.system(.body, design: .serif).weight(.bold))
+                        .foregroundStyle(AppColors.ink)
+                    Spacer(minLength: 0)
+                    Text(formatClimbDuration(climb.durationSec))
+                        .font(.system(size: 11).weight(.semibold))
+                        .monospacedDigit()
+                        .foregroundStyle(AppColors.inkMid)
+                }
+                HStack(spacing: 12) {
+                    climbStat(value: formatClimbDistance(climb.distanceM), label: "long.")
+                    climbStat(value: "\(Int(climb.elevationM.rounded())) m", label: "D+")
+                    climbStat(value: String(format: "%.1f%%", climb.avgGradePct), label: "moy.")
+                    climbStat(value: String(format: "%.1f%%", climb.maxGradePct), label: "max")
+                }
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func climbStat(value: String, label: String) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 3) {
+            Text(value).font(.system(size: 12).weight(.bold)).monospacedDigit().foregroundStyle(AppColors.ink)
+            Text(label).font(.system(size: 9)).foregroundStyle(AppColors.inkLight)
+        }
+    }
+
+    private func formatClimbDistance(_ m: Double) -> String {
+        m >= 1000 ? String(format: "%.1f km", m / 1000) : "\(Int(m.rounded())) m"
+    }
+
+    private func formatClimbDuration(_ sec: Double) -> String {
+        guard sec > 0 else { return "—" }
+        let s = Int(sec.rounded())
+        let h = s / 3600
+        let m = (s % 3600) / 60
+        let r = s % 60
+        return h > 0 ? String(format: "%d:%02d:%02d", h, m, r) : String(format: "%d:%02d", m, r)
     }
 
     // MARK: - HR Zones
