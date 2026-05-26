@@ -519,6 +519,7 @@ struct TrainingPlanView: View {
             startDate: startDate,
             targetDate: targetDate,
             goal: (km: targetKm, elev: goalElev, oneDayTss: oneDayTss),
+            minSessionKm: minSessionKm(for: category),
         )
     }
 
@@ -618,16 +619,33 @@ private func startOfMonday(_ date: Date) -> Date {
     return cal.date(from: comps) ?? date
 }
 
-private func dayFromShare(dow: Int, date: Date, type: DayType, share: Double, totals: (tss: Double, km: Double, elev: Double)) -> DayPlan {
-    DayPlan(
+/// Per-session minimum distance, by sport category. The engine
+/// might compute very small numbers on early ramp weeks (4-5 km of
+/// "long" ride is silly for cycling — you can't do anything useful
+/// in 4 km). Floor each non-rest day so the prescription is always
+/// actionable.
+private func minSessionKm(for category: SportCategory) -> Int {
+    switch category {
+    case .cycling: return 15   // 15 km is the warm-up for any meaningful bike ride
+    case .footing: return 3    // 3 km is a real-but-short run
+    case .snow:    return 5
+    case .water:   return 1    // pool laps in km — generous
+    case .indoor:  return 0    // distance doesn't apply
+    }
+}
+
+private func dayFromShare(dow: Int, date: Date, type: DayType, share: Double, totals: (tss: Double, km: Double, elev: Double), minKm: Int) -> DayPlan {
+    let rawKm = Int((totals.km * share).rounded())
+    let flooredKm = max(rawKm, minKm)
+    return DayPlan(
         dow: dow, date: date, type: type,
-        km: Int((totals.km * share).rounded()),
+        km: flooredKm,
         elev: Int((totals.elev * share).rounded()),
         tss: Int((totals.tss * share).rounded()),
     )
 }
 
-private func buildBuildishWeek(weekStart: Date, phase: Phase, totals: (tss: Double, km: Double, elev: Double), startDate: Date, goalDate: Date) -> [DayPlan] {
+private func buildBuildishWeek(weekStart: Date, phase: Phase, totals: (tss: Double, km: Double, elev: Double), startDate: Date, goalDate: Date, minKm: Int) -> [DayPlan] {
     let tpl = DOW_TEMPLATES[phase] ?? DOW_TEMPLATES[.build]!
     return (0..<7).map { dow in
         let date = Calendar.current.date(byAdding: .day, value: dow, to: weekStart) ?? weekStart
@@ -638,7 +656,7 @@ private func buildBuildishWeek(weekStart: Date, phase: Phase, totals: (tss: Doub
         if t == .rest {
             return DayPlan(dow: dow, date: date, type: .rest, km: 0, elev: 0, tss: 0)
         }
-        return dayFromShare(dow: dow, date: date, type: t, share: shareFor(t), totals: totals)
+        return dayFromShare(dow: dow, date: date, type: t, share: shareFor(t), totals: totals, minKm: minKm)
     }
 }
 
@@ -721,7 +739,7 @@ private extension Double {
     var rounded2: Double { (self * 100).rounded() / 100 }
 }
 
-private func buildPlan(baseline: Double, peakWeeklyTss: Double, peakWeeklyKm: Double, peakWeeklyElev: Double, startDate: Date, targetDate: Date, goal: (km: Double, elev: Double, oneDayTss: Double)) -> PlanResult {
+private func buildPlan(baseline: Double, peakWeeklyTss: Double, peakWeeklyKm: Double, peakWeeklyElev: Double, startDate: Date, targetDate: Date, goal: (km: Double, elev: Double, oneDayTss: Double), minSessionKm: Int) -> PlanResult {
     let start = startOfMonday(startDate)
     let targetMonday = startOfMonday(targetDate)
     let rawSpan = Int(ceil(targetMonday.timeIntervalSince(start) / (7 * 86400))) + 1
@@ -741,7 +759,7 @@ private func buildPlan(baseline: Double, peakWeeklyTss: Double, peakWeeklyKm: Do
                 km:   peakWeeklyKm   * (step.ratio / r.peak),
                 elev: peakWeeklyElev * (step.ratio / r.peak),
             )
-            days = buildBuildishWeek(weekStart: weekStart, phase: step.phase, totals: totals, startDate: startDate, goalDate: targetDate)
+            days = buildBuildishWeek(weekStart: weekStart, phase: step.phase, totals: totals, startDate: startDate, goalDate: targetDate, minKm: minSessionKm)
         }
         return WeekPlan(
             index: i + 1,
