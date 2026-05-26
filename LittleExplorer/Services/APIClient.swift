@@ -125,6 +125,36 @@ actor APIClient {
     struct SyncResult: Decodable, Sendable { let ok: Bool; let count: Int? }
     private struct EmptyBody: Encodable {}
 
+    // MARK: - Strava upload — push a locally-recorded ride
+
+    struct StravaUploadResult: Decodable, Sendable {
+        let ok: Bool
+        let uploadId: Int?
+        let status: String?
+    }
+
+    /// Push a `RideRecord` to the user's Strava account as a new
+    /// activity. Server-side endpoint serialises a GPX and multipart-
+    /// POSTs it to Strava's /uploads. Strava processes the file async
+    /// — our existing webhook picks up the resulting activity-create
+    /// event and syncs it back into Supabase.
+    @discardableResult
+    func uploadToStrava(record: RideRecord) async throws -> StravaUploadResult {
+        struct Body: Encodable {
+            let gpx: String
+            let name: String
+            let activityType: String
+            let externalId: String
+        }
+        let body = Body(
+            gpx:          RideGpxBuilder.build(record),
+            name:         record.title,
+            activityType: record.originalType ?? record.type,
+            externalId:   "tle-ride-\(record.id)",
+        )
+        return try await post("/api/strava/upload-activity", body: body)
+    }
+
     // MARK: - BAN address search / reverse geocode
 
     func searchPlaces(query: String) async throws -> [CommuneResult] {

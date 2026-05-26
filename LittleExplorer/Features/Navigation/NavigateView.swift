@@ -66,12 +66,11 @@ struct NavigateView: View {
             titleVisibility: .visible,
         ) {
             Button("Sauvegarder dans Petit Explorer") {
-                saveAndDismiss()
+                saveAndDismiss(uploadToStrava: false)
             }
-            Button("Sauvegarder + envoyer sur Strava (bientôt)") {
-                saveAndDismiss()
+            Button("Sauvegarder + envoyer sur Strava") {
+                saveAndDismiss(uploadToStrava: true)
             }
-            .disabled(true)
             Button("Ignorer cette sortie", role: .destructive) {
                 state?.stop()
                 dismiss()
@@ -94,7 +93,7 @@ struct NavigateView: View {
         showSaveDialog = true
     }
 
-    private func saveAndDismiss() {
+    private func saveAndDismiss(uploadToStrava: Bool = false) {
         guard let state else { dismiss(); return }
         let sport = environment.selectedSport
         if let record = state.commitRecord(sport: sport, title: itinerary.name) {
@@ -102,6 +101,19 @@ struct NavigateView: View {
             environment.activityStore.refreshLocal(user: environment.currentUser)
             environment.saveRideToHealthKitIfEnabled(record)
             Log.nav.notice("ride saved: \(String(format: "%.2f", record.distance ?? 0), privacy: .public) km")
+            if uploadToStrava {
+                // Fire-and-forget — Strava processes the GPX asynchronously,
+                // the existing webhook brings the new activity back into
+                // Supabase + the feed. UI errors land in Diagnostics.
+                Task {
+                    do {
+                        let result = try await environment.api.uploadToStrava(record: record)
+                        Log.nav.notice("Strava upload accepted: id=\(result.uploadId ?? -1) status=\(result.status ?? "?", privacy: .public)")
+                    } catch {
+                        Log.nav.error("Strava upload failed: \(error.localizedDescription, privacy: .public)")
+                    }
+                }
+            }
         }
         state.stop()
         dismiss()
