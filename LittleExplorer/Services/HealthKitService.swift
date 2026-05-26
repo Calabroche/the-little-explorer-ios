@@ -54,6 +54,62 @@ final class HealthKitService {
         try await store.requestAuthorization(toShare: writeTypes, read: [])
     }
 
+    /// Apple's privacy policy means `authorizationStatus(for:)` returns
+    /// the SAME value (`.notDetermined`) whether the user has seen the
+    /// prompt and denied it or hasn't seen it at all — they don't want
+    /// apps to fingerprint based on "did the user say yes to Health
+    /// for app X". The only reliable way to detect denial is to TRY
+    /// a tiny test write and see if it errors with .errorAuthorizationDenied.
+    ///
+    /// This method does exactly that: it attempts a 1-second placeholder
+    /// HKWorkout, then immediately deletes it. Result tells us whether
+    /// writes will succeed for real rides.
+    @MainActor
+    func verifyAuthorizationByProbe() async -> AuthorizationProbe {
+        guard Self.isAvailable else { return .unavailable }
+        do {
+            try await requestAuthorization()
+        } catch {
+            return .unavailable
+        }
+
+        // Build a tiny test workout — 1-second walk at "now". This is
+        // the cheapest possible proof of write access.
+        let now = Date()
+        let probe = HKWorkout(
+            activityType: .walking,
+            start: now,
+            end: now.addingTimeInterval(1),
+            duration: 1,
+            totalEnergyBurned: nil,
+            totalDistance: nil,
+            metadata: [HKMetadataKeyExternalUUID: "tle-probe-\(UUID().uuidString)"],
+        )
+        do {
+            try await store.save(probe)
+            // Clean up immediately — we don't want the probe polluting
+            // the user's workout list.
+            try? await store.delete(probe)
+            return .granted
+        } catch let error as NSError {
+            if error.code == HKError.errorAuthorizationDenied.rawValue {
+                return .denied
+            }
+            return .denied   // any other failure also blocks the save
+        }
+    }
+
+    enum AuthorizationProbe: String {
+        case granted, denied, unavailable
+        var displayLabel: String {
+            switch self {
+            case .granted:     return "Connecté à Apple Santé"
+            case .denied:      return "Permission refusée"
+            case .unavailable: return "Santé indisponible"
+            }
+        }
+    }
+
     /// Write a single `RideRecord` as a workout + route + HR samples.
     /// Idempotent against re-submission: a workout with the same
     /// external UUID is detected and skipped so we never get

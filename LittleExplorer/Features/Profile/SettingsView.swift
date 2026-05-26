@@ -15,6 +15,9 @@ struct SettingsView: View {
     @State private var saveMessage: String?
     @State private var saveIsError: Bool = false
 
+    @State private var hkProbeState: HealthKitService.AuthorizationProbe?
+    @State private var hkProbing: Bool = false
+
     var body: some View {
         @Bindable var env = environment
         Form {
@@ -43,6 +46,43 @@ struct SettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
+
+                // Probe button — Apple's privacy means we CAN'T tell
+                // from authorizationStatus whether the user granted or
+                // denied write access. We attempt a 1-second placeholder
+                // workout and immediately delete it; the outcome tells
+                // us the truth. If denied, surface a deep-link to the
+                // Réglages app's Health permissions screen so the user
+                // can fix it in one tap.
+                if HealthKitService.isAvailable {
+                    Button {
+                        Task { await probeHealthKit() }
+                    } label: {
+                        HStack {
+                            if hkProbing { ProgressView().scaleEffect(0.8) }
+                            Text(hkProbing ? "Test en cours…" : "Tester l'accès à Apple Santé")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            if let state = hkProbeState {
+                                Image(systemName: probeIcon(state))
+                                    .foregroundStyle(probeColor(state))
+                            }
+                        }
+                    }
+                    .disabled(hkProbing)
+
+                    if let state = hkProbeState {
+                        Text(state.displayLabel)
+                            .font(.caption)
+                            .foregroundStyle(probeColor(state))
+                        if state == .denied {
+                            Button {
+                                openHealthSettings()
+                            } label: {
+                                Label("Ouvrir Réglages → Santé", systemImage: "arrow.up.right.square")
+                            }
+                        }
+                    }
+                }
             }
 
             if let msg = saveMessage {
@@ -70,6 +110,40 @@ struct SettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { hydrateFromProfile() }
         .onChange(of: environment.session.profile?.id) { _, _ in hydrateFromProfile() }
+    }
+
+    @MainActor
+    private func probeHealthKit() async {
+        hkProbing = true
+        defer { hkProbing = false }
+        let result = await environment.healthKit.verifyAuthorizationByProbe()
+        hkProbeState = result
+        Log.tracking.notice("HealthKit probe result: \(result.rawValue, privacy: .public)")
+    }
+
+    private func probeIcon(_ state: HealthKitService.AuthorizationProbe) -> String {
+        switch state {
+        case .granted:     return "checkmark.circle.fill"
+        case .denied:      return "xmark.octagon.fill"
+        case .unavailable: return "minus.circle"
+        }
+    }
+
+    private func probeColor(_ state: HealthKitService.AuthorizationProbe) -> Color {
+        switch state {
+        case .granted:     return AppColors.green
+        case .denied:      return Color.red
+        case .unavailable: return AppColors.inkLight
+        }
+    }
+
+    /// Deep-link to iOS Settings. There's no public scheme for "→ Santé
+    /// → Sources de données" specifically, but the generic settings
+    /// open is one tap closer than the user navigating from scratch.
+    private func openHealthSettings() {
+        if let url = URL(string: UIApplication.openSettingsURLString) {
+            UIApplication.shared.open(url)
+        }
     }
 
     private func hydrateFromProfile() {
