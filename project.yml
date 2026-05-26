@@ -77,6 +77,11 @@ targets:
         NSLocationWhenInUseUsageDescription: Little Explorer uses your location to track rides and show your position on the map.
         NSLocationAlwaysAndWhenInUseUsageDescription: Little Explorer needs continuous location to keep tracking your ride when the screen is off.
         NSMotionUsageDescription: Used to detect cycling cadence and automatic activity start/stop.
+        # HealthKit — required to write rides into the Health app as
+        # HKWorkout + HKWorkoutRoute. Mirrors the strings already set
+        # on the Watch target.
+        NSHealthShareUsageDescription: Little Explorer reads heart rate and workout data to enrich your rides.
+        NSHealthUpdateUsageDescription: Little Explorer saves your rides into Apple Health so they show up alongside your other workouts and credit your activity rings.
         # ActivityKit
         NSSupportsLiveActivities: true
         NSSupportsLiveActivitiesFrequentUpdates: true
@@ -94,6 +99,7 @@ targets:
       - sdk: CoreLocation.framework
       - sdk: ActivityKit.framework
       - sdk: WatchConnectivity.framework
+      - sdk: HealthKit.framework
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.calabrese.little-explorer-ios

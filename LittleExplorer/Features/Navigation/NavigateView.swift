@@ -100,6 +100,7 @@ struct NavigateView: View {
         if let record = state.commitRecord(sport: sport, title: itinerary.name) {
             environment.localRides.add(record, for: environment.currentUser)
             environment.activityStore.refreshLocal(user: environment.currentUser)
+            environment.saveRideToHealthKitIfEnabled(record)
             Log.nav.notice("ride saved: \(String(format: "%.2f", record.distance ?? 0), privacy: .public) km")
         }
         state.stop()
