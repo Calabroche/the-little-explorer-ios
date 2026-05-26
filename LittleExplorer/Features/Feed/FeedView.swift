@@ -194,15 +194,18 @@ private struct FeedScrollView: View {
                     .padding(.horizontal, 16)
                     .padding(.top, -10)   // tighten the gap to the BrandHeader
 
-                    Last5StatsView(activities: filtered).padding(.horizontal, 16)
+                    // Heatmap first — gives the user a calendar-level
+                    // pulse of "what does my month / year look like"
+                    // before zooming into the Last 5 averages.
                     ActivityCalendarView(activities: filtered).padding(.horizontal, 16)
-                    PersonalRecordsView(activities: filtered, sport: env.selectedSport).padding(.horizontal, 16)
+                    Last5StatsView(activities: filtered).padding(.horizontal, 16)
                     if env.selectedSport == .running {
                         RunPaceZonesView(activities: filtered).padding(.horizontal, 16)
                     }
-                    if env.selectedSport == .cycling {
-                        TrainingProgramView(activities: filtered).padding(.horizontal, 16)
-                    }
+                    // PersonalRecords + TrainingProgramView moved out
+                    // of the Feed → now live in Analyses → Performances.
+                    // The Feed stays focused on "what happened recently",
+                    // Analyses owns "how am I tracking over time".
 
                     Divider().padding(.horizontal, 16)
 

@@ -5,7 +5,13 @@ import Charts
 ///   Vélo    → cible distance (km) + dénivelé (m) — l'algo TSS d'origine.
 ///   Course  → cible distance (km) + allure (min/km) — TSS estimé par
 ///             puissance d'effort liée à la VMA.
-///   Snow / Water / Indoor → placeholder pour l'instant.
+///
+/// Snow / water / indoor categories were removed from the planner (the
+/// generated plans weren't pulling their weight for those sports —
+/// volume + frequency don't model load the way they do for endurance
+/// running and cycling). The Track recorder still supports them. The
+/// switch below falls through to the cycling body as a safety net in
+/// case the enum gains a route into this view again.
 struct TrainingPlanView: View {
     let category: SportCategory
     @Environment(AppEnvironment.self) private var environment
@@ -26,11 +32,13 @@ struct TrainingPlanView: View {
 
     var body: some View {
         switch category {
-        case .cycling: cyclingBody
-        case .footing: runningBody
-        case .snow:    snowBody
-        case .water:   waterBody
-        case .indoor:  indoorBody
+        case .footing:
+            runningBody
+        case .cycling, .snow, .water, .indoor:
+            // PlannerHubView only routes cycling + footing into this
+            // view; the last three are defensive fallbacks that share
+            // the cycling form.
+            cyclingBody
         }
     }
 
@@ -140,274 +148,6 @@ struct TrainingPlanView: View {
     private func formatPace(_ secPerKm: Double) -> String {
         let s = Int(secPerKm.rounded())
         return String(format: "%d:%02d", s / 60, s % 60)
-    }
-
-    // MARK: - Snow (ski / raquettes) — same engine as cycling, smaller ranges
-
-    private var snowBody: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                snowHeader
-                Text("Sortie ski / raquettes : distance + dénivelé cibles. Le cycle 3:1 et les 2 semaines de taper s'appliquent comme au vélo.")
-                    .font(.system(size: 12)).foregroundStyle(AppColors.inkLight).lineSpacing(2)
-                VStack(spacing: 14) {
-                    slider(label: "OBJECTIF DISTANCE", value: $targetKm, range: 5...40, step: 1, unit: "km")
-                    slider(label: "OBJECTIF DÉNIVELÉ", value: $targetElev, range: 200...3000, step: 50, unit: "m")
-                    HStack(spacing: 12) {
-                        datePickerCell(label: "DÉBUT", date: $startDate)
-                        datePickerCell(label: "OBJECTIF", date: $targetDate)
-                    }
-                }
-                .padding(14)
-                .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 6))
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(AppColors.creamBorder, lineWidth: 1))
-                generateButton
-                if generated, let result = planResult {
-                    safeZoneBanner(result: result)
-                    chart(result: result)
-                    weeksList(result: result)
-                }
-            }
-            .padding(.horizontal, 16).padding(.vertical, 16)
-        }
-        .background(AppColors.cream)
-    }
-
-    private var snowHeader: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text("Plan ski.")
-                .font(.system(.title, design: .serif).weight(.heavy)).foregroundStyle(AppColors.ink)
-            Text("Distance + D+.")
-                .font(.system(.title, design: .serif).weight(.bold).italic())
-                .foregroundStyle(Color(red: 0.29, green: 0.48, blue: 0.61))
-        }
-    }
-
-    // MARK: - Water (swimming) — sessions/week + distance per session
-
-    @State private var swimDistPerSessionM: Double = 1500
-    @State private var swimSessionsPerWeek: Double = 3
-
-    private var waterBody: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text("Plan natation.")
-                        .font(.system(.title, design: .serif).weight(.heavy)).foregroundStyle(AppColors.ink)
-                    Text("Sessions piscine.")
-                        .font(.system(.title, design: .serif).weight(.bold).italic())
-                        .foregroundStyle(Color(red: 0.20, green: 0.60, blue: 0.80))
-                }
-                Text("Choisis ta distance cible par séance et combien de séances par semaine. Le plan monte progressivement le volume jusqu'à la date cible.")
-                    .font(.system(size: 12)).foregroundStyle(AppColors.inkLight).lineSpacing(2)
-
-                VStack(spacing: 14) {
-                    slider(label: "DISTANCE PAR SÉANCE", value: $swimDistPerSessionM, range: 500...5000, step: 100, unit: "m")
-                    slider(label: "SÉANCES / SEMAINE", value: $swimSessionsPerWeek, range: 1...6, step: 1, unit: "/sem")
-                    HStack(spacing: 12) {
-                        datePickerCell(label: "DÉBUT", date: $startDate)
-                        datePickerCell(label: "OBJECTIF", date: $targetDate)
-                    }
-                }
-                .padding(14)
-                .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 6))
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(AppColors.creamBorder, lineWidth: 1))
-
-                Button {
-                    generated = true
-                } label: {
-                    Text("GÉNÉRER LE PLAN  →")
-                        .font(.system(size: 12).weight(.bold)).tracking(1.5)
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(Color(red: 0.20, green: 0.60, blue: 0.80), in: RoundedRectangle(cornerRadius: 3))
-                }
-                .buttonStyle(.plain)
-
-                if generated {
-                    sessionBasedWeeksList(
-                        unit: "m",
-                        formatter: { Int($0).description },
-                        tint: Color(red: 0.20, green: 0.60, blue: 0.80),
-                    )
-                }
-            }
-            .padding(.horizontal, 16).padding(.vertical, 16)
-        }
-        .background(AppColors.cream)
-    }
-
-    // MARK: - Indoor (HIIT / muscu / yoga / RPM) — sessions/week + duration
-
-    @State private var indoorSessionMinutes: Double = 45
-    @State private var indoorSessionsPerWeek: Double = 3
-
-    private var indoorBody: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(alignment: .firstTextBaseline, spacing: 6) {
-                    Text("Plan salle.")
-                        .font(.system(.title, design: .serif).weight(.heavy)).foregroundStyle(AppColors.ink)
-                    Text("Séances + durée.")
-                        .font(.system(.title, design: .serif).weight(.bold).italic())
-                        .foregroundStyle(Color(red: 0.60, green: 0.40, blue: 0.70))
-                }
-                Text("Séances HIIT / muscu / yoga / RPM. Choisis ta durée cible et la fréquence — le plan monte progressivement jusqu'à la semaine cible.")
-                    .font(.system(size: 12)).foregroundStyle(AppColors.inkLight).lineSpacing(2)
-
-                VStack(spacing: 14) {
-                    slider(label: "DURÉE PAR SÉANCE", value: $indoorSessionMinutes, range: 20...120, step: 5, unit: "min")
-                    slider(label: "SÉANCES / SEMAINE", value: $indoorSessionsPerWeek, range: 1...6, step: 1, unit: "/sem")
-                    HStack(spacing: 12) {
-                        datePickerCell(label: "DÉBUT", date: $startDate)
-                        datePickerCell(label: "OBJECTIF", date: $targetDate)
-                    }
-                }
-                .padding(14)
-                .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 6))
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(AppColors.creamBorder, lineWidth: 1))
-
-                Button {
-                    generated = true
-                } label: {
-                    Text("GÉNÉRER LE PLAN  →")
-                        .font(.system(size: 12).weight(.bold)).tracking(1.5)
-                        .foregroundStyle(.white)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 14)
-                        .background(Color(red: 0.60, green: 0.40, blue: 0.70), in: RoundedRectangle(cornerRadius: 3))
-                }
-                .buttonStyle(.plain)
-
-                if generated {
-                    sessionBasedWeeksList(
-                        unit: "min",
-                        formatter: { "\(Int($0))" },
-                        tint: Color(red: 0.60, green: 0.40, blue: 0.70),
-                    )
-                }
-            }
-            .padding(.horizontal, 16).padding(.vertical, 16)
-        }
-        .background(AppColors.cream)
-    }
-
-    /// Simple weekly progression for water / indoor: sessions per
-    /// week × volume per session, ramped 60 % → 100 % linearly across
-    /// the prep window with a 70 % deload on the last full week before
-    /// the goal. No per-day grid (you don't swim every day; the user
-    /// just needs to know "this week, 4 sessions of 1.5 km each").
-    @ViewBuilder
-    private func sessionBasedWeeksList(unit: String, formatter: @escaping (Double) -> String, tint: Color) -> some View {
-        let weeks = max(2, min(24, weeksBetween(startDate, targetDate)))
-        let baseSessions = category == .water ? swimSessionsPerWeek : indoorSessionsPerWeek
-        let basePerSession = category == .water ? swimDistPerSessionM : indoorSessionMinutes
-        VStack(spacing: 6) {
-            ForEach(0..<weeks, id: \.self) { i in
-                let weekIndex = i + 1
-                let isLast = i == weeks - 1
-                let isTaper = i == weeks - 2
-                let ratio: Double = isLast ? 1.0
-                    : isTaper ? 0.7
-                    : 0.6 + 0.4 * (Double(i) / Double(max(weeks - 2, 1)))
-                let sessions = Int(baseSessions.rounded())
-                let perSession = basePerSession * ratio
-                let weekTotal = Double(sessions) * perSession
-                sessionWeekRow(
-                    index: weekIndex,
-                    sessions: sessions,
-                    perSession: formatter(perSession),
-                    perSessionUnit: unit,
-                    weekTotal: formatter(weekTotal),
-                    weekTotalUnit: unit,
-                    isTaper: isTaper,
-                    isGoal: isLast,
-                    tint: tint,
-                )
-            }
-        }
-    }
-
-    private func sessionWeekRow(index: Int, sessions: Int, perSession: String, perSessionUnit: String, weekTotal: String, weekTotalUnit: String, isTaper: Bool, isGoal: Bool, tint: Color) -> some View {
-        HStack(alignment: .top, spacing: 0) {
-            Rectangle().fill(tint).frame(width: 4)
-            VStack(alignment: .leading, spacing: 6) {
-                HStack {
-                    Text("Semaine \(index)")
-                        .font(.system(.body, design: .serif).weight(.bold))
-                        .foregroundStyle(AppColors.ink)
-                    Spacer()
-                    Text(isGoal ? "OBJECTIF" : isTaper ? "ALLÈGEMENT" : "CONSTRUCTION")
-                        .font(.system(size: 9).weight(.bold)).tracking(0.8).foregroundStyle(tint)
-                }
-                HStack(spacing: 16) {
-                    statBig(label: "SESSIONS", value: "\(sessions)", unit: "/sem", color: tint)
-                    statMini(label: "PAR SÉANCE", value: "\(perSession) \(perSessionUnit)", color: AppColors.ink)
-                    Spacer()
-                    Text("\(weekTotal) \(weekTotalUnit)")
-                        .font(.system(size: 10).weight(.semibold))
-                        .foregroundStyle(AppColors.inkLight)
-                }
-            }
-            .padding(.leading, 10).padding(.trailing, 12).padding(.vertical, 10)
-        }
-        .background(AppColors.creamDark, in: RoundedRectangle(cornerRadius: 3))
-    }
-
-    private func weeksBetween(_ from: Date, _ to: Date) -> Int {
-        let secs = to.timeIntervalSince(from)
-        return Int(ceil(secs / (7 * 86400))) + 1
-    }
-
-    // MARK: - Legacy placeholder (unused — kept for safety)
-
-    private var placeholderBody: some View {
-        VStack(spacing: 18) {
-            Image(systemName: placeholderIcon)
-                .font(.system(size: 48))
-                .foregroundStyle(AppColors.terra)
-            Text(placeholderTitle)
-                .font(.system(.title2, design: .serif).weight(.heavy))
-                .foregroundStyle(AppColors.ink)
-            Text(placeholderBlurb)
-                .font(.system(.callout, design: .serif))
-                .foregroundStyle(AppColors.inkMid)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
-            Text("Bientôt disponible")
-                .font(.system(size: 11).weight(.bold)).tracking(1.2)
-                .foregroundStyle(AppColors.terra)
-                .padding(.horizontal, 12).padding(.vertical, 6)
-                .background(AppColors.terraLight, in: Capsule())
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(AppColors.cream)
-    }
-
-    private var placeholderIcon: String {
-        switch category {
-        case .snow:   return "snowflake"
-        case .water:  return "drop.fill"
-        case .indoor: return "dumbbell.fill"
-        default:      return "sparkles"
-        }
-    }
-    private var placeholderTitle: String {
-        switch category {
-        case .snow:   return "Plan ski"
-        case .water:  return "Plan natation"
-        case .indoor: return "Plan séance indoor"
-        default:      return "Plan d'entraînement"
-        }
-    }
-    private var placeholderBlurb: String {
-        switch category {
-        case .snow:   return "Cycle d'entraînement pour ta sortie ski (alpin / nordique). Plans dédiés à venir."
-        case .water:  return "Séances bassin par distance + intervalles. À venir."
-        case .indoor: return "Plans de force, HIIT, RPM, yoga par durée + intensité. À venir."
-        default:      return "À venir."
-        }
     }
 
     // MARK: - Header + intro
@@ -720,17 +460,16 @@ struct TrainingPlanView: View {
             peakWeeklyKm = targetKm * 1.4
             peakWeeklyElev = 0
             goalElev = 0
-        case .cycling, .snow:
-            // Cycling + ski-touring use the same model: distance +
-            // elevation feed TSS. Ski-touring at 15 km / 1500 D+ is
-            // roughly comparable in load to a 60 km bike ride —
-            // the same formula scales naturally.
+        case .cycling, .snow, .water, .indoor:
+            // Cycling formula — distance + elevation feed TSS. The
+            // last three cases aren't reachable from the planner
+            // (PlannerHubView only exposes cycling + footing) but
+            // we keep them here so the switch is exhaustive and
+            // routes safely if something ever passes them in.
             oneDayTss = targetKm * 2.5 + targetElev * 0.05
             peakWeeklyKm = targetKm * 1.6
             peakWeeklyElev = targetElev * 1.5
             goalElev = targetElev
-        default:
-            return nil
         }
 
         let peakWeeklyTss = oneDayTss * 2.4

@@ -21,6 +21,11 @@ struct AnalyticsHubView: View {
                             row(symbol: "photo.on.rectangle.angled", title: "Galerie photos", subtitle: "Vos souvenirs de sortie", color: AppColors.blue)
                         }
                     }
+                    Section("Performances") {
+                        NavigationLink(value: AnalyticsRoute.performance) {
+                            row(symbol: "trophy.fill", title: "Records & charge", subtitle: "Meilleures perfs + programme TSS", color: AppColors.terra)
+                        }
+                    }
                     Section("Cyclisme") {
                         NavigationLink(value: AnalyticsRoute.ftp) {
                             row(symbol: "bolt.fill", title: "FTP", subtitle: "Power-duration & évolution", color: AppColors.terra)
@@ -40,11 +45,12 @@ struct AnalyticsHubView: View {
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(for: AnalyticsRoute.self) { route in
                 switch route {
-                case .map:      AllRoutesMapView()
-                case .photos:   PhotosView()
-                case .ftp:      FtpView()
-                case .compare:  CompareView()
-                case .wrapped:  WrappedView()
+                case .map:         AllRoutesMapView()
+                case .photos:      PhotosView()
+                case .performance: PerformanceView()
+                case .ftp:         FtpView()
+                case .compare:     CompareView()
+                case .wrapped:     WrappedView()
                 }
             }
             .task { await env.activityStore.load(user: env.currentUser) }
@@ -78,5 +84,5 @@ struct AnalyticsHubView: View {
 }
 
 enum AnalyticsRoute: Hashable {
-    case map, photos, ftp, compare, wrapped
+    case map, photos, performance, ftp, compare, wrapped
 }

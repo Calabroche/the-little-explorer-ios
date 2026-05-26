@@ -1,20 +1,28 @@
 import SwiftUI
 
 /// Tabbed planner hub. Top-level picker chooses the SPORT CATEGORY
-/// (Vélo / Course / Neige / Salle / Eau), then the second-level tab
-/// bar only shows the sub-features that make sense for that sport:
+/// (Vélo / Course), then the second-level tab bar only shows the
+/// sub-features that make sense for that sport:
 ///
 ///   Vélo:    Itinéraire + Plan + Auto + Suggestions  (the full menu)
 ///   Course:  Itinéraire + Plan                       (no cycling-route library)
-///   Neige:   Plan                                    (no ski-tour library yet)
-///   Eau:     Plan                                    (laps + intervals)
-///   Salle:   Plan                                    (intervals / sessions)
+///
+/// Snow / Water / Indoor categories exist on the Track recorder but
+/// were intentionally removed from the planner — generating a 12-week
+/// progression for yoga or pool laps wasn't pulling its weight. The
+/// SportCategory enum still has those cases for the Track picker; we
+/// just don't expose them here.
 ///
 /// Default category reads from `env.selectedSport` mapped to its
 /// SportCategory; user can change it via the chip bar at the top
 /// without affecting the global selectedSport (the planner picker
 /// is local to this view).
 struct PlannerHubView: View {
+    /// The only categories the planner exposes. Drives the chip bar
+    /// at the top — `SportCategory.allCases` would also list snow /
+    /// water / indoor which we hide here.
+    private static let plannerCategories: [SportCategory] = [.cycling, .footing]
+
     @Environment(AppEnvironment.self) private var environment
 
     enum Tab: String, Identifiable {
@@ -68,7 +76,7 @@ struct PlannerHubView: View {
     private var categoryBar: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
-                ForEach(SportCategory.allCases) { cat in
+                ForEach(Self.plannerCategories) { cat in
                     let isActive = category == cat
                     Button {
                         category = cat
@@ -157,26 +165,30 @@ struct PlannerHubView: View {
 
     /// Which sub-features make sense for this sport category. Cycling
     /// gets the full deal because the route library + algos were
-    /// built around it. Other outdoor sports get Itinéraire + Plan.
-    /// Indoor and snow get just Plan for now.
+    /// built around it; running gets Itinéraire + Plan. The other
+    /// SportCategory cases (snow / water / indoor) aren't reachable
+    /// from the planner — see `plannerCategories` — but the switch
+    /// stays exhaustive in case the enum gains a new case.
     private func availableTabs(for cat: SportCategory) -> [Tab] {
         switch cat {
         case .cycling: return [.itineraire, .plan, .auto, .proposals]
         case .footing: return [.itineraire, .plan]
-        case .snow:    return [.plan]
-        case .water:   return [.plan]
-        case .indoor:  return [.plan]
+        case .snow, .water, .indoor:
+            // Defensive — not reachable through the chip bar.
+            return [.plan]
         }
     }
 
     /// Map the global Sport enum to its SportCategory so the user's
-    /// favorite sport lands them on the right planner section.
+    /// favorite sport lands them on the right planner section. Sports
+    /// whose category was retired from the planner (ski / snowshoe /
+    /// swim) fall back to cycling — they still have full UI on the
+    /// Track recorder, just not in the planner.
     private func category(forGlobal sport: Sport) -> SportCategory {
         switch sport {
         case .cycling:                       return .cycling
         case .running, .walking, .hiking:    return .footing
-        case .ski, .snowshoe:                return .snow
-        case .swim:                          return .water
+        case .ski, .snowshoe, .swim:         return .cycling
         }
     }
 }
