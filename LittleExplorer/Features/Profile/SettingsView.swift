@@ -18,6 +18,18 @@ struct SettingsView: View {
     @State private var hkProbeState: HealthKitService.AuthorizationProbe?
     @State private var hkProbing: Bool = false
 
+    // Danger zone — "Supprimer mon compte". Two-step confirm in-row so a
+    // misclick doesn't wipe months of training data. Same pattern as the
+    // web /settings page.
+    @State private var deleteArmed: Bool = false
+    @State private var isDeleting: Bool = false
+    @State private var deleteError: String?
+
+    // "Déconnecter tous les appareils" — less destructive, no two-step
+    // confirm needed (data stays put, user just has to sign back in).
+    @State private var isLoggingOutAll: Bool = false
+    @State private var logoutAllError: String?
+
     var body: some View {
         @Bindable var env = environment
         Form {
@@ -105,6 +117,102 @@ struct SettingsView: View {
                 }
                 .disabled(isSaving)
             }
+
+            // Logout from all devices — bumps session_invalidated_at +
+            // revokes every api_tokens row. Useful after a lost phone
+            // or shared session. Data stays intact, user just has to
+            // re-sign-in everywhere.
+            Section("Sécurité de la session") {
+                if let err = logoutAllError {
+                    Text(err)
+                        .font(.caption)
+                        .foregroundStyle(Color.red)
+                }
+                Button {
+                    Task { await logoutAll() }
+                } label: {
+                    HStack {
+                        if isLoggingOutAll { ProgressView().scaleEffect(0.8) }
+                        Label(
+                            isLoggingOutAll ? "Déconnexion…" : "Déconnecter tous les appareils",
+                            systemImage: "iphone.slash",
+                        )
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .disabled(isLoggingOutAll)
+                Text("Invalide la session web et toutes les sessions iOS / Apple Watch. Tes données restent intactes — tu pourras te reconnecter.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            // "Powered by Strava" attribution — required by the Strava
+            // API Agreement on every surface that surfaces Strava data.
+            // Discreet footer-style cell that links out to strava.com.
+            Section {
+                Link(destination: URL(string: "https://www.strava.com")!) {
+                    HStack(spacing: 10) {
+                        Image(systemName: "bolt.horizontal.fill")
+                            .foregroundStyle(Color(red: 0.99, green: 0.32, blue: 0.0)) // Strava orange #FC5200
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("Powered by Strava")
+                                .font(.system(size: 11).weight(.semibold))
+                                .tracking(0.6)
+                                .foregroundStyle(AppColors.inkMid)
+                            Text("Données d'activité fournies via l'API Strava")
+                                .font(.system(size: 10))
+                                .foregroundStyle(AppColors.inkLight)
+                        }
+                        Spacer()
+                        Image(systemName: "arrow.up.right.square")
+                            .font(.caption)
+                            .foregroundStyle(AppColors.inkLight)
+                    }
+                }
+            }
+
+            // Danger zone — account deletion. RGPD art. 17 + Strava API
+            // requirement (the user must have a way to revoke and delete).
+            Section("Zone sensible") {
+                if let err = deleteError {
+                    Text(err)
+                        .font(.caption)
+                        .foregroundStyle(Color.red)
+                }
+                if !deleteArmed {
+                    Button(role: .destructive) {
+                        deleteArmed = true
+                        deleteError = nil
+                    } label: {
+                        Label("Supprimer mon compte", systemImage: "trash")
+                    }
+                    .disabled(isDeleting)
+                } else {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Cette action est irréversible. Tes activités, paramètres, et le lien Strava seront effacés. Tu seras déconnecté.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Button(role: .destructive) {
+                        Task { await deleteAccount() }
+                    } label: {
+                        HStack {
+                            if isDeleting { ProgressView().scaleEffect(0.8) }
+                            Text(isDeleting ? "Suppression…" : "Oui, supprime tout")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            Image(systemName: "exclamationmark.triangle.fill")
+                        }
+                    }
+                    .disabled(isDeleting)
+                    Button {
+                        deleteArmed = false
+                        deleteError = nil
+                    } label: {
+                        Text("Annuler")
+                    }
+                    .disabled(isDeleting)
+                }
+            }
         }
         .navigationTitle("Paramètres")
         .navigationBarTitleDisplayMode(.inline)
@@ -166,6 +274,49 @@ struct SettingsView: View {
     private func parseDouble(_ s: String) -> Double? {
         let normalized = s.replacingOccurrences(of: ",", with: ".")
         return Double(normalized.trimmingCharacters(in: .whitespaces))
+    }
+
+    /// Calls POST /api/me/logout-all then clears the local session.
+    /// Same UI contract as `deleteAccount` (dismiss → root → LoginView
+    /// via SessionStore observer), just non-destructive on the server.
+    @MainActor
+    private func logoutAll() async {
+        isLoggingOutAll = true
+        defer { isLoggingOutAll = false }
+        logoutAllError = nil
+        do {
+            try await environment.api.logoutAllDevices()
+            Log.auth.notice("Logout-all OK — clearing local session.")
+            environment.session.clear()
+            dismiss()
+        } catch {
+            Log.auth.error("Logout-all failed: \(error.localizedDescription, privacy: .public)")
+            logoutAllError = "Échec : \(error.localizedDescription)"
+        }
+    }
+
+    /// Calls DELETE /api/me, clears the local session on success, and
+    /// the LoginView re-takes the root via the SessionStore observer.
+    /// On failure leaves the session intact and surfaces the error so
+    /// the user can retry.
+    @MainActor
+    private func deleteAccount() async {
+        isDeleting = true
+        defer { isDeleting = false }
+        deleteError = nil
+        do {
+            try await environment.api.deleteAccount()
+            Log.auth.notice("Account delete OK — clearing local session.")
+            environment.session.clear()
+            // dismiss() pops the SettingsView from the nav stack. The
+            // session observer in RootView will then show LoginView
+            // since session.token is now nil.
+            dismiss()
+        } catch {
+            Log.auth.error("Account delete failed: \(error.localizedDescription, privacy: .public)")
+            deleteError = "Échec : \(error.localizedDescription)"
+            deleteArmed = false
+        }
     }
 
     private func save() async {

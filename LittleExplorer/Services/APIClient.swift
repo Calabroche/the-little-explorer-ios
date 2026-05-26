@@ -89,6 +89,49 @@ actor APIClient {
         case clear
     }
 
+    /// DELETE /api/me — wipe the signed-in user from Supabase. The
+    /// server best-effort revokes the Strava token then cascades the
+    /// delete across activities / sessions / accounts / api_tokens.
+    ///
+    /// Caller is responsible for `SessionStore.clear()` + bouncing
+    /// back to LoginView after this returns successfully. Throws on
+    /// any non-2xx response so the UI can show an error and leave the
+    /// session intact.
+    func deleteAccount() async throws {
+        try await emptyPost(method: "DELETE", path: "/api/me")
+    }
+
+    /// POST /api/me/logout-all — invalidate every active session for
+    /// the current user (both web JWTs and iOS bearer tokens). Less
+    /// destructive than `deleteAccount` — data stays, user just gets
+    /// kicked out everywhere and has to sign back in.
+    ///
+    /// Same UI contract: caller clears SessionStore on success.
+    func logoutAllDevices() async throws {
+        try await emptyPost(method: "POST", path: "/api/me/logout-all")
+    }
+
+    /// Shared no-body request used by `deleteAccount` and
+    /// `logoutAllDevices`. Both expect a 204 (No Content) on success.
+    private func emptyPost(method: String, path: String) async throws {
+        let url = baseURL.appendingPathComponent(path)
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        if let token = authToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        let (data, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse {
+            if http.statusCode == 204 || (200..<300).contains(http.statusCode) {
+                return
+            }
+            if http.statusCode == 401 { throw APIError.unauthorized }
+            let preview = String(data: data.prefix(200), encoding: .utf8) ?? ""
+            Log.api.error("\(method, privacy: .public) \(path, privacy: .public) — HTTP \(http.statusCode) · \(preview, privacy: .public)")
+            throw APIError.http(http.statusCode)
+        }
+    }
+
     // MARK: - Admin
 
     struct AdminUser: Decodable, Sendable, Identifiable {
