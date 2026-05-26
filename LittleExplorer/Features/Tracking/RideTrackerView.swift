@@ -9,14 +9,25 @@ struct RideTrackerView: View {
     @State private var showSaveSheet = false
     @State private var saveTitle = ""
 
-    /// Sports surfaced in the picker on Start. Order matches the
-    /// labels Florian asked for: vélo / run / ski / trek.
-    private let pickableSports: [Sport] = [.cycling, .running, .ski, .hiking]
-
     var body: some View {
         NavigationStack {
             ZStack {
-                map
+                // Sport-conditional canvas: outdoor → live map, indoor
+                // → flat cream + big metrics. We don't even show the
+                // map for a yoga session because the GPS dot would
+                // just sit there.
+                if let tracker, tracker.phase != .idle {
+                    if tracker.isIndoor {
+                        indoorCanvas
+                    } else {
+                        map
+                    }
+                } else {
+                    // Idle state — neither map nor indoor. Cream
+                    // background with a "tap Start" prompt.
+                    idleCanvas
+                }
+
                 VStack {
                     metricsHeader
                     Spacer()
@@ -29,13 +40,54 @@ struct RideTrackerView: View {
             .onAppear { ensureTracker() }
             .sheet(isPresented: $showSportSheet) {
                 sportPicker
-                    .presentationDetents([.height(380), .medium])
+                    .presentationDetents([.large])
                     .presentationDragIndicator(.visible)
             }
             .sheet(isPresented: $showSaveSheet) {
                 saveSheet
-                    .presentationDetents([.height(360), .medium])
+                    .presentationDetents([.height(380), .medium])
                     .presentationDragIndicator(.visible)
+            }
+        }
+    }
+
+    // MARK: - Canvases
+
+    private var idleCanvas: some View {
+        ZStack {
+            AppColors.cream.ignoresSafeArea()
+            VStack(spacing: 12) {
+                Image(systemName: "stopwatch")
+                    .font(.system(size: 56))
+                    .foregroundStyle(AppColors.terra.opacity(0.85))
+                Text("Choisis un sport")
+                    .font(.system(.title2, design: .serif).weight(.heavy))
+                    .foregroundStyle(AppColors.ink)
+                Text("Vélo, course, ski, salle… Tap Start pour ouvrir la liste.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(AppColors.inkMid)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 40)
+            }
+        }
+    }
+
+    private var indoorCanvas: some View {
+        let sub = tracker?.selectedSubtype
+        return ZStack {
+            (sub?.color ?? AppColors.terra).opacity(0.12).ignoresSafeArea()
+            VStack(spacing: 20) {
+                Image(systemName: sub?.symbol ?? "dumbbell.fill")
+                    .font(.system(size: 88))
+                    .foregroundStyle(sub?.color ?? AppColors.terra)
+                Text(sub?.displayName ?? "Séance en salle")
+                    .font(.system(.largeTitle, design: .serif).weight(.heavy))
+                    .foregroundStyle(AppColors.ink)
+                Text("Séance indoor — pas de GPS. Tes métriques apparaissent en haut.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(AppColors.inkMid)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 30)
             }
         }
     }
@@ -63,26 +115,45 @@ struct RideTrackerView: View {
     private var metricsHeader: some View {
         if let tracker, tracker.phase != .idle {
             VStack(spacing: 8) {
-                if let sport = tracker.selectedSport {
+                if let subtype = tracker.selectedSubtype {
                     HStack(spacing: 6) {
-                        Image(systemName: sport.symbol).font(.system(size: 11))
-                        Text(sport.displayName.uppercased())
+                        Image(systemName: subtype.symbol).font(.system(size: 11))
+                        Text(subtype.displayName.uppercased())
                             .font(.system(size: 10).weight(.bold)).tracking(1.2)
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
-                    .background(sport.color, in: Capsule())
+                    .background(subtype.color, in: Capsule())
                     .foregroundStyle(.white)
                 }
-                HStack(spacing: 12) {
-                    metric("Time", value: RideFormatter.duration(tracker.elapsed))
-                    metric("Distance", value: RideFormatter.distance(tracker.distanceMeters))
-                    metric("Speed", value: RideFormatter.speed(tracker.currentSpeedKmh))
+                if tracker.isIndoor {
+                    // Indoor: time + calories estimate. No distance /
+                    // speed (no GPS).
+                    HStack(spacing: 12) {
+                        metric("Time", value: RideFormatter.duration(tracker.elapsed))
+                        metric("Kcal", value: indoorCalories(tracker: tracker))
+                    }
+                } else {
+                    HStack(spacing: 12) {
+                        metric("Time", value: RideFormatter.duration(tracker.elapsed))
+                        metric("Distance", value: RideFormatter.distance(tracker.distanceMeters))
+                        metric("Speed", value: RideFormatter.speed(tracker.currentSpeedKmh))
+                    }
                 }
             }
             .padding(12)
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
         }
+    }
+
+    /// Live MET-based calorie estimate for indoor sessions. Updates
+    /// once a second as `tracker.elapsed` ticks.
+    private func indoorCalories(tracker: RideTracker) -> String {
+        let met = tracker.selectedSubtype?.metEquivalent ?? 5
+        let weight = environment.session.profile?.effective.riderKg ?? 70
+        let hours = tracker.elapsed / 3600
+        let kcal = met * weight * hours
+        return "\(Int(kcal.rounded()))"
     }
 
     // MARK: - Controls
@@ -142,52 +213,78 @@ struct RideTrackerView: View {
             .foregroundStyle(.white)
     }
 
-    // MARK: - Sport picker sheet
+    // MARK: - Sport picker sheet — categorized
 
     private var sportPicker: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            Text("Quel sport ?")
-                .font(.system(.title2, design: .serif).weight(.heavy))
-                .foregroundStyle(AppColors.ink)
-                .padding(.top, 6)
+        NavigationStack {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    Text("Quel sport ?")
+                        .font(.system(.largeTitle, design: .serif).weight(.heavy))
+                        .foregroundStyle(AppColors.ink)
+                        .padding(.top, 4)
 
-            VStack(spacing: 10) {
-                ForEach(pickableSports) { sport in
-                    Button {
-                        showSportSheet = false
-                        Task {
-                            await tracker?.start(sport: sport)
-                        }
-                    } label: {
-                        HStack(spacing: 14) {
-                            ZStack {
-                                Circle()
-                                    .fill(sport.color.opacity(0.18))
-                                    .frame(width: 42, height: 42)
-                                Image(systemName: sport.symbol)
-                                    .foregroundStyle(sport.color)
-                                    .font(.system(size: 18, weight: .semibold))
-                            }
-                            Text(sport.displayName)
-                                .font(.system(.title3, design: .serif).weight(.bold))
-                                .foregroundStyle(AppColors.ink)
-                            Spacer()
-                            Image(systemName: "chevron.right")
-                                .font(.system(size: 12).weight(.semibold))
-                                .foregroundStyle(AppColors.inkLight)
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 12)
-                        .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 12))
-                        .overlay(RoundedRectangle(cornerRadius: 12).stroke(AppColors.creamBorder, lineWidth: 1))
+                    ForEach(SportCategory.allCases) { category in
+                        categorySection(category)
                     }
-                    .buttonStyle(.plain)
                 }
+                .padding(20)
+            }
+            .background(AppColors.cream)
+        }
+    }
+
+    private func categorySection(_ category: SportCategory) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 8) {
+                Image(systemName: category.symbol)
+                    .font(.system(size: 12).weight(.bold))
+                    .foregroundStyle(AppColors.terra)
+                Text(category.displayName.uppercased())
+                    .font(.system(size: 11).weight(.bold))
+                    .tracking(1.5)
+                    .foregroundStyle(AppColors.terra)
+                Rectangle().fill(AppColors.creamBorder).frame(height: 1)
+            }
+            ForEach(category.subtypes) { subtype in
+                subtypeRow(subtype)
             }
         }
-        .padding(20)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(AppColors.cream)
+    }
+
+    private func subtypeRow(_ subtype: SportSubtype) -> some View {
+        Button {
+            showSportSheet = false
+            Task { await tracker?.start(subtype: subtype) }
+        } label: {
+            HStack(spacing: 14) {
+                ZStack {
+                    Circle()
+                        .fill(subtype.color.opacity(0.18))
+                        .frame(width: 40, height: 40)
+                    Image(systemName: subtype.symbol)
+                        .foregroundStyle(subtype.color)
+                        .font(.system(size: 17, weight: .semibold))
+                }
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(subtype.displayName)
+                        .font(.system(.body, design: .serif).weight(.bold))
+                        .foregroundStyle(AppColors.ink)
+                    Text(subtype.isOutdoor ? "GPS + carte" : "Indoor — métriques seules")
+                        .font(.system(size: 10))
+                        .foregroundStyle(AppColors.inkLight)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 11).weight(.semibold))
+                    .foregroundStyle(AppColors.inkLight)
+            }
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(AppColors.creamBorder, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
     }
 
     // MARK: - Save sheet
