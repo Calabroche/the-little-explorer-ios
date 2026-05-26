@@ -212,6 +212,23 @@ private struct FeedScrollView: View {
                                     .padding(.horizontal, 16)
                             }
                             .buttonStyle(.plain)
+                            // contextMenu: long-press the card to get a
+                            // Delete option WITHOUT opening the detail
+                            // view. This is the escape hatch when a
+                            // record's data triggers the detail-view
+                            // crash — user can purge the bad ride from
+                            // here without ever rendering the broken
+                            // ActivityDetailView body.
+                            .contextMenu {
+                                if activity.id < 0 {
+                                    Button(role: .destructive) {
+                                        env.localRides.remove(id: activity.id, for: env.currentUser)
+                                        env.activityStore.refreshLocal(user: env.currentUser)
+                                    } label: {
+                                        Label("Supprimer cette sortie", systemImage: "trash")
+                                    }
+                                }
+                            }
                         }
                     }
                 }

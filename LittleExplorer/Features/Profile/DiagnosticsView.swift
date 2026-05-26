@@ -11,6 +11,7 @@ import SwiftUI
 /// logs without needing the `com.apple.developer.os-log-direct`
 /// entitlement (which only ships on internal Apple builds).
 struct DiagnosticsView: View {
+    @Environment(AppEnvironment.self) private var environment
     @State private var entries: [LogEntry] = []
     @State private var isLoading: Bool = false
     @State private var loadError: String?
@@ -20,6 +21,7 @@ struct DiagnosticsView: View {
     @State private var selectedCategory: String? = nil
     @State private var shareItems: [Any]? = nil
     @State private var showShare: Bool = false
+    @State private var showWipeConfirm: Bool = false
 
     enum TimeRange: String, CaseIterable, Hashable {
         case lastHour      = "1 h"
@@ -116,10 +118,24 @@ struct DiagnosticsView: View {
                         Label("Partager (\(filteredEntries.count) lignes)", systemImage: "square.and.arrow.up")
                     }
                     .disabled(filteredEntries.isEmpty)
+                    Divider()
+                    Button(role: .destructive) {
+                        showWipeConfirm = true
+                    } label: {
+                        Label("Effacer les rides locaux", systemImage: "trash")
+                    }
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
             }
+        }
+        .alert("Effacer tous les rides locaux ?", isPresented: $showWipeConfirm) {
+            Button("Annuler", role: .cancel) {}
+            Button("Effacer", role: .destructive) {
+                wipeLocalRides()
+            }
+        } message: {
+            Text("Supprime toutes les sorties enregistrées via Track ou Naviguer. Les sorties Strava restent. À utiliser si une sortie corrompue empêche le feed de s'ouvrir.")
         }
         .task {
             // Always emit a "view opened" entry so a fresh process
@@ -311,6 +327,18 @@ struct DiagnosticsView: View {
         case .fault:     return .fault
         @unknown default: return .info
         }
+    }
+
+    // MARK: - Emergency wipe of local rides
+
+    private func wipeLocalRides() {
+        let user = environment.currentUser
+        let local = environment.localRides.rides(for: user)
+        Log.app.notice("Diagnostics wipe: removing \(local.count) local rides")
+        for ride in local {
+            environment.localRides.remove(id: ride.id, for: user)
+        }
+        environment.activityStore.refreshLocal(user: user)
     }
 
     // MARK: - Test entries (sanity check the pipeline)
