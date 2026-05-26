@@ -74,7 +74,12 @@ struct ActivityDetailView: View {
     }
 
     var body: some View {
-        ScrollView {
+        // DIAGNOSTIC: log every body computation so the user can see in
+        // Diagnostics which sections render before the crash. The
+        // `_ =` pattern is a SwiftUI side-effect trick that fires once
+        // per body evaluation without changing the view hierarchy.
+        let _ = Log.ui.notice("ActivityDetailView.body id=\(activity.id) gps=\(activity.gps.count) hr=\(activity.heartrate?.count ?? 0) dist=\(activity.distance ?? -1)")
+        return ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 header
                 topStatsCard
