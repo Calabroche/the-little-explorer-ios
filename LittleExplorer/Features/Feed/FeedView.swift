@@ -441,84 +441,52 @@ private struct FeedHero: View {
 
 // MARK: - Sport picker
 
-/// Accordion-style sport selector. Collapsed: a single capsule
-/// showing the active sport with a chevron-down. Tapped: the rest of
-/// the available sports unfold below the header. Tapping any sport
-/// (or the header again) collapses the accordion. Takes one row of
-/// vertical space when closed instead of a wide scrolling chip strip.
+/// Native iOS Menu-style sport selector. Tap the chip → a compact
+/// system dropdown appears with all available sports. Selection
+/// is one tap (no separate close action), Apple handles the
+/// animation + dismiss + accessibility automatically. The visible
+/// chip stays compact whether or not the menu is open.
 private struct SportPickerAccordion: View {
     @Binding var sport: Sport
     let available: [Sport]
-    @State private var expanded: Bool = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            header
-            if expanded {
-                Divider().background(AppColors.creamBorder)
-                VStack(spacing: 2) {
-                    ForEach(available.filter { $0 != sport }) { option in
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.22)) {
-                                sport = option
-                                expanded = false
-                            }
-                        } label: {
-                            row(for: option, isSelected: false)
-                        }
-                        .buttonStyle(.plain)
+        Menu {
+            ForEach(available) { option in
+                Button {
+                    sport = option
+                } label: {
+                    Label(option.displayName, systemImage: option.symbol)
+                    if option == sport {
+                        // The checkmark next to the active item makes
+                        // the current selection unambiguous when the
+                        // menu opens.
+                        Image(systemName: "checkmark")
                     }
                 }
-                .padding(.vertical, 6)
-                .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-        }
-        .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 10))
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(AppColors.creamBorder, lineWidth: 1))
-    }
-
-    private var header: some View {
-        Button {
-            withAnimation(.easeInOut(duration: 0.22)) {
-                expanded.toggle()
             }
         } label: {
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
                 Image(systemName: sport.symbol)
-                    .font(.system(size: 14).weight(.semibold))
+                    .font(.system(size: 12).weight(.semibold))
                     .foregroundStyle(.white)
-                    .frame(width: 30, height: 30)
+                    .frame(width: 26, height: 26)
                     .background(sport.color, in: Circle())
                 Text(sport.displayName)
-                    .font(.system(.body, design: .serif).weight(.bold))
+                    .font(.system(size: 14).weight(.bold))
                     .foregroundStyle(AppColors.ink)
-                Spacer()
-                Image(systemName: "chevron.down")
-                    .font(.system(size: 11).weight(.bold))
-                    .rotationEffect(.degrees(expanded ? 180 : 0))
+                    .lineLimit(1)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.system(size: 9).weight(.bold))
                     .foregroundStyle(AppColors.inkLight)
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(AppColors.surface, in: Capsule())
+            .overlay(Capsule().stroke(AppColors.creamBorder, lineWidth: 1))
         }
+        .menuStyle(.button)
         .buttonStyle(.plain)
-    }
-
-    private func row(for option: Sport, isSelected: Bool) -> some View {
-        HStack(spacing: 10) {
-            Image(systemName: option.symbol)
-                .font(.system(size: 12).weight(.semibold))
-                .foregroundStyle(option.color)
-                .frame(width: 26, height: 26)
-                .background(option.color.opacity(0.15), in: Circle())
-            Text(option.displayName)
-                .font(.system(.body).weight(.medium))
-                .foregroundStyle(AppColors.inkMid)
-            Spacer()
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
-        .contentShape(Rectangle())
     }
 }
 
