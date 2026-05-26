@@ -58,12 +58,18 @@ actor APIClient {
         try await get("/api/me")
     }
 
-    /// PATCH /api/me — update rider weight, bike weight, FTP override.
-    /// Field semantics mirror the web API:
+    /// PATCH /api/me — update rider weight, bike weight, FTP override,
+    /// and display name. Field semantics mirror the web API:
     ///   - `.unchanged` → key omitted from request
-    ///   - `.set(value)` → key set to the number
-    ///   - `.clear` → key explicitly set to null (= revert to default)
-    func updateSettings(riderKg: SettingsField<Double>, bikeKg: SettingsField<Double>, customFtp: SettingsField<Int>) async throws -> MeProfile {
+    ///   - `.set(value)` → key set to the number / string
+    ///   - `.clear` → key explicitly set to null (= revert to default
+    ///                / fall back to OAuth-provided name)
+    func updateSettings(
+        riderKg: SettingsField<Double>,
+        bikeKg: SettingsField<Double>,
+        customFtp: SettingsField<Int>,
+        name: SettingsField<String> = .unchanged,
+    ) async throws -> MeProfile {
         var body: [String: Any] = [:]
         switch riderKg {
         case .unchanged: break
@@ -80,7 +86,40 @@ actor APIClient {
         case .set(let v): body["custom_ftp"] = v
         case .clear:     body["custom_ftp"] = NSNull()
         }
+        switch name {
+        case .unchanged: break
+        case .set(let v): body["name"] = v
+        case .clear:     body["name"] = NSNull()
+        }
         return try await patchJSON("/api/me", jsonObject: body)
+    }
+
+    /// POST /api/me/disconnect-strava — unlink the Strava account
+    /// without deleting the user. Strava token revoked best-effort,
+    /// the accounts row is dropped, athlete_id is nulled. Already-
+    /// synced activities are preserved.
+    func disconnectStrava() async throws {
+        try await emptyPost(method: "POST", path: "/api/me/disconnect-strava")
+    }
+
+    /// GET /api/me/export — RGPD art. 20 portability dump.
+    /// Returns raw JSON bytes. Caller writes to a temp file and
+    /// hands to UIActivityViewController so the user can save / mail
+    /// / AirDrop it.
+    func exportMyData() async throws -> Data {
+        let url = baseURL.appendingPathComponent("/api/me/export")
+        var request = URLRequest(url: url)
+        request.httpMethod = "GET"
+        if let token = authToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        let (data, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse {
+            if (200..<300).contains(http.statusCode) { return data }
+            if http.statusCode == 401 { throw APIError.unauthorized }
+            throw APIError.http(http.statusCode)
+        }
+        return data
     }
 
     enum SettingsField<V> {

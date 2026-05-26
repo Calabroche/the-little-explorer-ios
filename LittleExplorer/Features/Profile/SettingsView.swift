@@ -7,9 +7,17 @@ struct SettingsView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.dismiss) private var dismiss
 
+    @State private var nameText: String = ""
     @State private var riderKgText: String = ""
     @State private var bikeKgText: String = ""
     @State private var customFtpText: String = ""
+
+    // "Exporter mes données" + "Déconnecter Strava" — RGPD art. 20 +
+    // granular control over the Strava link.
+    @State private var isExporting: Bool = false
+    @State private var isDisconnectingStrava: Bool = false
+    @State private var dataActionError: String?
+    @State private var exportSheetItem: ExportSheetItem?
 
     @State private var isSaving: Bool = false
     @State private var saveMessage: String?
@@ -33,6 +41,13 @@ struct SettingsView: View {
     var body: some View {
         @Bindable var env = environment
         Form {
+            Section("Identité") {
+                LabeledField(label: "Nom affiché", placeholder: environment.session.profile?.name ?? "auto", text: $nameText, keyboard: .default)
+                Text("Laisse vide pour utiliser le nom de ton compte Google ou Strava.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Profil cycliste") {
                 LabeledField(label: "Poids du coureur (kg)", placeholder: "ex. 66", text: $riderKgText, keyboard: .decimalPad)
                 LabeledField(label: "Poids du vélo (kg)", placeholder: "ex. 8.2", text: $bikeKgText, keyboard: .decimalPad)
@@ -116,6 +131,49 @@ struct SettingsView: View {
                     }
                 }
                 .disabled(isSaving)
+            }
+
+            // RGPD art. 20 portability + granular Strava unlink. Both
+            // are non-destructive — Export just downloads a JSON dump,
+            // Disconnect Strava preserves activities and lets the user
+            // re-link later.
+            Section("Mes données") {
+                if let err = dataActionError {
+                    Text(err)
+                        .font(.caption)
+                        .foregroundStyle(Color.red)
+                }
+                Button {
+                    Task { await exportData() }
+                } label: {
+                    HStack {
+                        if isExporting { ProgressView().scaleEffect(0.8) }
+                        Label(
+                            isExporting ? "Préparation…" : "Exporter mes données",
+                            systemImage: "square.and.arrow.up",
+                        )
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .disabled(isExporting)
+                if environment.session.profile?.athleteId != nil {
+                    Button {
+                        Task { await disconnectStrava() }
+                    } label: {
+                        HStack {
+                            if isDisconnectingStrava { ProgressView().scaleEffect(0.8) }
+                            Label(
+                                isDisconnectingStrava ? "Déconnexion…" : "Déconnecter Strava",
+                                systemImage: "link.badge.plus",
+                            )
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    .disabled(isDisconnectingStrava)
+                }
+                Text("L'export contient profil + paramètres + toutes tes activités (JSON, RGPD art. 20). Déconnecter Strava arrête la sync mais conserve l'historique.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             // Logout from all devices — bumps session_invalidated_at +
@@ -218,6 +276,9 @@ struct SettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { hydrateFromProfile() }
         .onChange(of: environment.session.profile?.id) { _, _ in hydrateFromProfile() }
+        .sheet(item: $exportSheetItem) { item in
+            ShareSheet(items: [item.fileURL])
+        }
     }
 
     @MainActor
@@ -258,6 +319,13 @@ struct SettingsView: View {
         guard let profile = environment.session.profile else { return }
         let stored = profile.settings
         let effective = profile.effective
+        // nameText starts empty (= clear override). If the user has a
+        // stored override different from the OAuth name, we'd want to
+        // surface it pre-filled. The API doesn't currently distinguish
+        // between "OAuth name" and "user-set name" in the response, so
+        // we just show the current name as placeholder text and let
+        // the user start typing to override.
+        nameText = ""
         riderKgText = stored?.riderKg.map { trimmed($0) } ?? trimmed(effective.riderKg)
         bikeKgText = stored?.bikeKg.map { trimmed($0) } ?? trimmed(effective.bikeKg)
         customFtpText = stored?.customFtp.map { String($0) } ?? (effective.customFtp.map { String($0) } ?? "")
@@ -274,6 +342,51 @@ struct SettingsView: View {
     private func parseDouble(_ s: String) -> Double? {
         let normalized = s.replacingOccurrences(of: ",", with: ".")
         return Double(normalized.trimmingCharacters(in: .whitespaces))
+    }
+
+    /// Fetches the user's export from /api/me/export, writes it to a
+    /// temp file, and presents a UIActivityViewController so the user
+    /// can save it to Files / mail / AirDrop / iCloud. Errors stay
+    /// inline in the section.
+    @MainActor
+    private func exportData() async {
+        isExporting = true
+        defer { isExporting = false }
+        dataActionError = nil
+        do {
+            let data = try await environment.api.exportMyData()
+            let today = ISO8601DateFormatter.localDate.string(from: Date())
+            let filename = "the-little-explorer-export-\(today).json"
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent(filename)
+            try data.write(to: url, options: .atomic)
+            exportSheetItem = ExportSheetItem(fileURL: url)
+            Log.api.notice("Export OK — \(data.count) bytes written to \(url.lastPathComponent, privacy: .public)")
+        } catch {
+            Log.api.error("Export failed: \(error.localizedDescription, privacy: .public)")
+            dataActionError = "Export échoué : \(error.localizedDescription)"
+        }
+    }
+
+    /// Calls POST /api/me/disconnect-strava and refreshes the local
+    /// profile so the Strava-gated UI (Disconnect button itself, the
+    /// "Connecter Strava" button on Login etc.) re-renders without
+    /// needing a sign-out.
+    @MainActor
+    private func disconnectStrava() async {
+        isDisconnectingStrava = true
+        defer { isDisconnectingStrava = false }
+        dataActionError = nil
+        do {
+            try await environment.api.disconnectStrava()
+            // Refresh the profile so athleteId is now nil locally.
+            if let refreshed = try? await environment.api.me() {
+                environment.session.profile = refreshed
+            }
+            Log.auth.notice("Strava disconnected via settings.")
+        } catch {
+            Log.auth.error("Disconnect Strava failed: \(error.localizedDescription, privacy: .public)")
+            dataActionError = "Déconnexion Strava échouée : \(error.localizedDescription)"
+        }
     }
 
     /// Calls POST /api/me/logout-all then clears the local session.
@@ -333,9 +446,14 @@ struct SettingsView: View {
         let ftp: APIClient.SettingsField<Int> = customFtpText.trimmingCharacters(in: .whitespaces).isEmpty
             ? .clear
             : (Int(customFtpText.trimmingCharacters(in: .whitespaces)).map { .set($0) } ?? .unchanged)
+        // Name: empty → unchanged (the field starts empty and we don't
+        // want to wipe the existing name just because the user opened
+        // settings without typing). Non-empty → set the new value.
+        let nameTrimmed = nameText.trimmingCharacters(in: .whitespaces)
+        let nameField: APIClient.SettingsField<String> = nameTrimmed.isEmpty ? .unchanged : .set(nameTrimmed)
 
         do {
-            let updated = try await environment.api.updateSettings(riderKg: rider, bikeKg: bike, customFtp: ftp)
+            let updated = try await environment.api.updateSettings(riderKg: rider, bikeKg: bike, customFtp: ftp, name: nameField)
             await MainActor.run {
                 environment.session.profile = updated
                 saveMessage = "Paramètres enregistrés."
@@ -366,4 +484,21 @@ private struct LabeledField: View {
                 .frame(maxWidth: 140)
         }
     }
+}
+
+/// Wraps a URL in an Identifiable for `.sheet(item:)`. The existing
+/// `ShareSheet` in LittleExplorer/UI/ShareSheet.swift handles the
+/// actual UIActivityViewController bridge.
+private struct ExportSheetItem: Identifiable {
+    let fileURL: URL
+    var id: String { fileURL.path }
+}
+
+/// Reusable yyyy-MM-dd local formatter used for the export filename.
+private extension ISO8601DateFormatter {
+    static let localDate: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withFullDate]
+        return f
+    }()
 }
