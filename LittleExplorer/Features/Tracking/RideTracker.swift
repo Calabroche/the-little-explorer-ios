@@ -27,6 +27,27 @@ final class RideTracker {
     private(set) var maxSpeedKmh: Double = 0
     private(set) var path: [CLLocationCoordinate2D] = []
     private(set) var selectedSport: Sport?
+    /// True while auto-pause has kicked in. The view reads this to
+    /// show a discreet "PAUSE AUTO" badge so the user knows the
+    /// clock has been stopped on purpose vs because of a crash.
+    private(set) var isAutoPaused: Bool = false
+
+    /// Per-sport low-speed threshold (km/h) for auto-pause. Below
+    /// this for `autoPauseDelaySec` seconds → clock freezes. Above
+    /// → clock resumes. Padded so a slow climb doesn't trigger
+    /// (e.g. cycling = 3 km/h, which is "I literally stopped").
+    private func autoPauseThresholdKmh(for sport: Sport?) -> Double {
+        switch sport {
+        case .cycling:   return 3      // slowest meaningful pedal stroke
+        case .running:   return 2
+        case .hiking, .walking, .snowshoe: return 1
+        case .ski:       return 4
+        case .swim:      return 0      // disable auto-pause for swim (constant motion)
+        case nil:        return 2
+        }
+    }
+    private let autoPauseDelaySec: TimeInterval = 8   // 8s below threshold = auto-pause
+    private var lowSpeedSince: Date?
     /// Granular sport subtype the user picked (VTT, RPM, Pilates, …).
     /// Stored on the resulting RideRecord as `originalType` so the
     /// detail view can show the precise label and we don't lose the
@@ -268,12 +289,36 @@ final class RideTracker {
         return h > 0 ? "\(h)h \(String(format: "%02d", m))m" : "\(m) min"
     }
 
+    /// Pause-aware clock. Tracks "real elapsed" minus accumulated
+    /// pause time so the displayed duration matches the time spent
+    /// actually moving. Auto-pause + manual pause both flow through
+    /// the same accumulator.
+    private var accumulatedPauseSec: TimeInterval = 0
+    private var pauseStartedAt: Date?
+
     private func startClock() {
         clockTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
                 guard let self, self.phase == .recording, let start = self.startedAt else { continue }
-                self.elapsed = Date.now.timeIntervalSince(start)
+
+                // Auto-pause integration: when we just transitioned
+                // into auto-pause, stamp the start of this pause
+                // window. When we come out, fold it into the
+                // accumulator. Manual pause uses the same machinery
+                // via the existing pause()/resume() methods elsewhere.
+                if self.isAutoPaused, self.pauseStartedAt == nil {
+                    self.pauseStartedAt = .now
+                } else if !self.isAutoPaused, let pStart = self.pauseStartedAt {
+                    self.accumulatedPauseSec += Date.now.timeIntervalSince(pStart)
+                    self.pauseStartedAt = nil
+                }
+
+                // While currently auto-paused, the clock stops advancing.
+                if !self.isAutoPaused {
+                    let raw = Date.now.timeIntervalSince(start)
+                    self.elapsed = raw - self.accumulatedPauseSec
+                }
                 await self.pushLiveUpdate()
             }
         }
@@ -335,6 +380,31 @@ final class RideTracker {
         sampledSpeedKmh.append(speedKmh)
         currentSpeedKmh = speedKmh
         if speedKmh > maxSpeedKmh { maxSpeedKmh = speedKmh }
+
+        // Auto-pause logic — freeze the clock when the user is
+        // stationary for `autoPauseDelaySec` seconds, resume when
+        // they're moving again. The clock task reads `isAutoPaused`
+        // to skip elapsed increments. We DO still ingest GPS samples
+        // during auto-pause so the polyline is continuous, but the
+        // time-stamped streams (sampledTimeS) carry the frozen
+        // elapsed value.
+        let threshold = autoPauseThresholdKmh(for: selectedSport)
+        if threshold > 0 {
+            if speedKmh < threshold {
+                if lowSpeedSince == nil { lowSpeedSince = loc.timestamp }
+                else if !isAutoPaused, let since = lowSpeedSince,
+                        loc.timestamp.timeIntervalSince(since) > autoPauseDelaySec {
+                    isAutoPaused = true
+                    Log.tracking.notice("auto-pause triggered (speed < \(threshold, privacy: .public) km/h for \(self.autoPauseDelaySec, privacy: .public)s)")
+                }
+            } else {
+                lowSpeedSince = nil
+                if isAutoPaused {
+                    isAutoPaused = false
+                    Log.tracking.notice("auto-pause released (speed \(speedKmh, privacy: .public) km/h)")
+                }
+            }
+        }
 
         if let last = lastLocation {
             let delta = loc.distance(from: last)
