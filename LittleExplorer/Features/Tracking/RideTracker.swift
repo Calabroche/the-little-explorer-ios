@@ -279,12 +279,59 @@ final class RideTracker {
         }
     }
 
+    /// Per-sport realistic speed ceiling (km/h). Anything above is
+    /// almost certainly a GPS jump and gets rejected. Padded ~30 %
+    /// above world-class human pace so we don't kill legitimate
+    /// downhills / sprints.
+    private func maxRealisticSpeedKmh(for sport: Sport?) -> Double {
+        switch sport {
+        case .cycling:  return 90      // pro descents ~80
+        case .ski:      return 100     // alpine descent ceiling
+        case .running:  return 28      // 100 m sprint world record ≈ 37 but sustained < 28
+        case .hiking, .walking, .snowshoe: return 10  // brisk hike ≈ 6
+        case .swim:     return 8
+        case nil:       return 100     // no sport picked yet: permissive
+        }
+    }
+
     private func ingest(_ loc: CLLocation) async {
+        // Quality filters — applied BEFORE we trust the sample.
+        // Without these, a single bad fix at recording start
+        // (horizontal accuracy 65+ m, common indoors / urban
+        // canyon) gets added to distanceMeters as a 50-200 m
+        // "teleport" and shows up as a 30+ km/h max-speed spike.
+        //
+        // 1. Reject invalid accuracy (negative = iOS couldn't fix).
+        // 2. Reject samples with > 30 m horizontal accuracy —
+        //    CoreLocation explicitly says these are guesses.
+        if loc.horizontalAccuracy < 0 || loc.horizontalAccuracy > 30 {
+            return
+        }
+        // 3. Reject implausible inter-sample speed. We compute the
+        //    "instantaneous" speed implied by the delta to the last
+        //    accepted sample and compare against a per-sport ceiling.
+        //    Anything above = GPS jump (tunnel exit, urban canyon,
+        //    multipath bounce).
+        if let last = lastLocation {
+            let dt = loc.timestamp.timeIntervalSince(last.timestamp)
+            let dm = loc.distance(from: last)
+            if dt > 0 {
+                let impliedKmh = (dm / dt) * 3.6
+                if impliedKmh > maxRealisticSpeedKmh(for: selectedSport) {
+                    return
+                }
+            }
+        }
+
         let coord = Coordinate(lat: loc.coordinate.latitude, lng: loc.coordinate.longitude)
         path.append(loc.coordinate)
         sampledGps.append(coord)
         sampledAltitude.append(loc.altitude)
-        let speedKmh = max(0, loc.speed) * 3.6
+        // Use iOS-reported speed if non-negative AND below the sport
+        // ceiling; otherwise fall back to 0. Avoids "max speed 28 km/h
+        // en marche" from a single noisy fix.
+        let rawKmh = max(0, loc.speed) * 3.6
+        let speedKmh = rawKmh <= maxRealisticSpeedKmh(for: selectedSport) ? rawKmh : 0
         sampledSpeedKmh.append(speedKmh)
         currentSpeedKmh = speedKmh
         if speedKmh > maxSpeedKmh { maxSpeedKmh = speedKmh }

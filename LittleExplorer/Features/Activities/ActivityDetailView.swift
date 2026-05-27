@@ -115,12 +115,20 @@ struct ActivityDetailView: View {
                     scrubCardSlot(for: .altitude)
                     elevationChart
                 } else {
+                    // Sport-aware empty state. The previous wording
+                    // hard-coded "Roule…" which read wrong for
+                    // Marche / Course / Ski. We pick the right verb
+                    // from the activity's sport and explain what
+                    // likely happened — the most common cause is
+                    // poor GPS quality (indoors, urban canyon, low-
+                    // power mode) where most samples were rejected
+                    // by the recorder's accuracy + speed filters.
                     cardWrapper(label: "DONNÉES") {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Trop peu d'échantillons GPS pour tracer les courbes.")
+                            Text("Trop peu d'échantillons GPS valides pour tracer les courbes.")
                                 .font(.system(size: 12))
                                 .foregroundStyle(AppColors.inkMid)
-                            Text("Roule au moins 30 s — Health + le local store gardent quand même un workout complet.")
+                            Text(emptyStateHint(for: activity))
                                 .font(.caption)
                                 .foregroundStyle(AppColors.inkLight)
                         }
@@ -860,6 +868,25 @@ struct ActivityDetailView: View {
             Text(value).font(.system(size: 12).weight(.bold)).monospacedDigit().foregroundStyle(AppColors.ink)
             Text(label).font(.system(size: 9)).foregroundStyle(AppColors.inkLight)
         }
+    }
+
+    /// Sport-aware hint shown when the activity has too few GPS
+    /// samples to draw any chart. Replaces the previous hard-coded
+    /// "Roule au moins 30 s…" which read wrong for non-cycling
+    /// sports + made it sound like a duration problem when really
+    /// it's a GPS quality problem.
+    private func emptyStateHint(for activity: RideRecord) -> String {
+        let verb: String
+        switch activity.type {
+        case "cycling":  verb = "Roule"
+        case "running":  verb = "Cours"
+        case "walking":  verb = "Marche"
+        case "hiking":   verb = "Randonne"
+        case "ski", "snowshoe": verb = "Skie"
+        case "swim":     verb = "Nage"
+        default:         verb = "Bouge"
+        }
+        return "Le tracker rejette les positions GPS imprécises (≥ 30 m d'erreur) et les sauts irréalistes. \(verb) en extérieur, ciel dégagé, ≥ 30 s — la sortie reste sauvegardée même sans courbes."
     }
 
     private func formatClimbDistance(_ m: Double) -> String {
