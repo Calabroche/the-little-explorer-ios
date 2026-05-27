@@ -78,7 +78,17 @@ final class SessionStore {
         let status = SecItemUpdate(q as CFDictionary, upd as CFDictionary)
         if status == errSecItemNotFound {
             q[kSecValueData as String] = data
-            q[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlock
+            // Stronger accessibility than the previous
+            // `AfterFirstUnlock`: now the token is readable ONLY while
+            // the device is unlocked AND only on the device that
+            // wrote it (never restored to another device from an
+            // iCloud / Finder backup). Defends against:
+            //   • Stolen-and-still-unlocked: less common since unlock
+            //     state matters, but combined with the 90-day server
+            //     expiry the window narrows further.
+            //   • Backup restore to attacker's device: previously the
+            //     token would travel with the backup; now it doesn't.
+            q[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
             SecItemAdd(q as CFDictionary, nil)
         }
     }
