@@ -279,6 +279,9 @@ final class RideTracker {
             riderKg: nil,
             totalMass: nil,
             paceSPerKm: pace,
+            // Locally-tracked rides aren't bound to a Strava gear yet.
+            gearId: nil,
+            gearName: nil,
         )
     }
 

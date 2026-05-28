@@ -171,10 +171,33 @@ private struct FeedScrollView: View {
 
     private static let scrollAnchorID = "feed-top"
 
+    // Bike filter — null means "all bikes". Local state, resets when
+    // the tab is rebuilt. Mirrors the web's FeedPage chip row.
+    @State private var bikeFilter: String? = nil
+
     var body: some View {
         let allActivities = env.activityStore.activities
-        let filtered = env.activityStore.filtered(by: env.selectedSport)
+        let sportFiltered = env.activityStore.filtered(by: env.selectedSport)
         let availableSports = allActivities.availableSports
+
+        // Distinct (gearId, gearName) pairs seen in the sport-filtered
+        // feed. Drives the chip row's option set.
+        let bikesSeen: [(id: String, name: String)] = {
+            var out: [(id: String, name: String)] = []
+            var seen = Set<String>()
+            for a in sportFiltered {
+                guard let gid = a.gearId, let gn = a.gearName, !gn.isEmpty else { continue }
+                if seen.insert(gid).inserted { out.append((id: gid, name: gn)) }
+            }
+            return out
+        }()
+        let showBikeFilter = env.selectedSport == .cycling && bikesSeen.count >= 2
+
+        // Apply the bike filter on top of the sport filter. When no
+        // bike is selected, this is a no-op.
+        let filtered: [RideRecord] = bikeFilter == nil
+            ? sportFiltered
+            : sportFiltered.filter { $0.gearId == bikeFilter }
 
         ScrollViewReader { proxy in
             ScrollView {
@@ -193,6 +216,14 @@ private struct FeedScrollView: View {
                     )
                     .padding(.horizontal, 16)
                     .padding(.top, -10)   // tighten the gap to the BrandHeader
+
+                    if showBikeFilter {
+                        BikeFilterChips(
+                            bikes: bikesSeen,
+                            selected: $bikeFilter,
+                        )
+                        .padding(.horizontal, 16)
+                    }
 
                     // Heatmap first — gives the user a calendar-level
                     // pulse of "what does my month / year look like"
@@ -247,9 +278,74 @@ private struct FeedScrollView: View {
                     proxy.scrollTo(Self.scrollAnchorID, anchor: .top)
                 }
             }
+            // Reset the bike filter whenever the sport switches away
+            // from cycling — the chip row disappears anyway, but we
+            // don't want a stale "filter on Rocket" hanging in state
+            // when the user comes back later.
+            .onChange(of: env.selectedSport) { _, newSport in
+                if newSport != .cycling { bikeFilter = nil }
+            }
         }
     }
 
+}
+
+// MARK: - Bike filter chips
+
+/// Single-select chip row mirroring the web's FeedPage BikeFilterBar.
+/// Only mounted when sport=cycling and ≥2 distinct bikes are seen in
+/// the current feed — the parent handles that gate. Selecting an
+/// already-active chip clears the filter (back to "Tous").
+private struct BikeFilterChips: View {
+    let bikes: [(id: String, name: String)]
+    @Binding var selected: String?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("§ VÉLO")
+                .font(.system(size: 10).weight(.bold))
+                .tracking(1.2)
+                .foregroundStyle(AppColors.terra)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    Chip(label: "Tous", active: selected == nil) {
+                        selected = nil
+                    }
+                    ForEach(bikes, id: \.id) { bike in
+                        Chip(label: bike.name, active: selected == bike.id) {
+                            selected = (selected == bike.id) ? nil : bike.id
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private struct Chip: View {
+        let label: String
+        let active: Bool
+        let action: () -> Void
+
+        var body: some View {
+            Button(action: action) {
+                Text(label)
+                    .font(.system(size: 12).weight(active ? .bold : .medium))
+                    .tracking(0.4)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .foregroundStyle(active ? Color.white : AppColors.inkMid)
+                    .background(active ? AppColors.terra : AppColors.surface,
+                                in: Capsule())
+                    .overlay(
+                        Capsule().stroke(
+                            active ? AppColors.terra : AppColors.creamBorder,
+                            lineWidth: 1,
+                        ),
+                    )
+            }
+            .buttonStyle(.plain)
+        }
+    }
 }
 
 // MARK: - Hero (greeting + period stats card)

@@ -400,6 +400,10 @@ final class NavigateState {
             wkg: nil, ef: nil, trimp: nil, vam: nil, ftp: nil,
             weather: nil, bestEfforts: nil, photos: nil, hrZones: nil,
             aed: nil, riderKg: nil, totalMass: nil, paceSPerKm: nil,
+            // Local rides aren't Strava-tagged yet (no gear_id flow on
+            // the iOS tracker). Nil flows through to "no bike chip" on
+            // the card — same as a manual Strava activity.
+            gearId: nil, gearName: nil,
         )
     }
 

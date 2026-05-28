@@ -44,6 +44,13 @@ struct RideRecord: Codable, Identifiable, Hashable {
     let riderKg: Double?
     let totalMass: Double?
     let paceSPerKm: Int?
+    /// Strava gear_id — present on cycling activities tagged with a
+    /// bike (e.g. "b1234567"). nil for manual / non-tagged rides.
+    let gearId: String?
+    /// Bike nickname denormalized server-side from bike_gears.name
+    /// (e.g. "Rocket", "Elon musk"). Drives the per-card chip + the
+    /// feed bike-filter.
+    let gearName: String?
 
     enum CodingKeys: String, CodingKey {
         case id, type, title, date, location, duration, distance, speed, elevation, descent, gps, altitude, heartrate, calories, np, tss, vi, wkg, ef, trimp, vam, ftp, weather, bestEfforts, photos, hrZones, aed
@@ -63,6 +70,8 @@ struct RideRecord: Codable, Identifiable, Hashable {
         case riderKg = "rider_kg"
         case totalMass = "total_mass"
         case paceSPerKm = "pace_s_per_km"
+        case gearId   = "gear_id"
+        case gearName = "gear_name"
     }
 }
 
