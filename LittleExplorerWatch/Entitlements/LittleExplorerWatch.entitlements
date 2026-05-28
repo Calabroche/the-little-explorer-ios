@@ -2,5 +2,15 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!--
+	  Required because WorkoutManager calls HKHealthStore.requestAuthorization,
+	  starts an HKWorkoutSession, and reads heart-rate from
+	  HKLiveWorkoutBuilder. Without this entitlement on the Watch target
+	  (separate from the iOS target's entitlements!), the system refuses
+	  to install the watchOS app with the generic
+	  "This app couldn't be installed" alert and no further detail.
+	-->
+	<key>com.apple.developer.healthkit</key>
+	<true/>
 </dict>
 </plist>
