@@ -260,9 +260,17 @@ final class WorkoutManager: NSObject {
         // Total distance from the GPS chain. Strava uses the same
         // approach (sum of segment lengths), which gives nice round
         // numbers on flat rides and slightly under-counts on switchbacks.
+        //
+        // Edge case: when `fixes.count < 2` (zero GPS fixes — happens in
+        // the simulator without location simulation, or on a real ride
+        // ended before any fix arrived), `1..<fixes.count` becomes
+        // `1..<0` which CRASHES with "Range requires lowerBound <= upperBound".
+        // Guard with a positive lower-bound check.
         var totalM: Double = 0
-        for i in 1..<fixes.count {
-            totalM += fixes[i].distance(from: fixes[i - 1])
+        if fixes.count >= 2 {
+            for i in 1..<fixes.count {
+                totalM += fixes[i].distance(from: fixes[i - 1])
+            }
         }
 
         // ID convention: negative timestamp (ms) so it can't collide
