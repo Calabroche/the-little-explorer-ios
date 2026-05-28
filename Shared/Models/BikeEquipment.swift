@@ -7,6 +7,25 @@ import Foundation
 struct EquipmentResponse: Decodable, Sendable {
     let totalKm: Double
     let items: [BikeEquipment]
+    /// The user's Strava-synced bikes. Optional because older server
+    /// versions don't return this — iOS handles missing gracefully.
+    let bikes: [BikeGear]?
+}
+
+/// The user's bike as Strava sees it — used to scope wear to a
+/// specific bike (a chain on the Canyon shouldn't tick up on e-bike
+/// rides). Synced from Strava's `/api/v3/athlete` bikes[] array.
+struct BikeGear: Decodable, Sendable, Identifiable, Hashable {
+    let id: String
+    let name: String
+    let primaryBike: Bool
+    let totalKm: Double
+
+    enum CodingKeys: String, CodingKey {
+        case id, name
+        case primaryBike = "primary_bike"
+        case totalKm     = "totalKm"
+    }
 }
 
 struct BikeEquipment: Decodable, Sendable, Identifiable {
@@ -18,6 +37,11 @@ struct BikeEquipment: Decodable, Sendable, Identifiable {
     let lifetimeKm: Int
     let replacedAt: String?
     let notes: String?
+    /// Strava gear_id this piece is bound to. nil = "all bikes" (legacy).
+    let gearId: String?
+    /// Server denormalizes the bike's nickname so the UI doesn't have
+    /// to do a join client-side.
+    let gearName: String?
     let totalKmToday: Double
     let kmSinceInstall: Double
     let wearRatio: Double
@@ -29,6 +53,8 @@ struct BikeEquipment: Decodable, Sendable, Identifiable {
         case lifetimeKm     = "lifetime_km"
         case replacedAt     = "replaced_at"
         case notes
+        case gearId         = "gear_id"
+        case gearName       = "gear_name"
         case totalKmToday   = "totalKmToday"
         case kmSinceInstall = "kmSinceInstall"
         case wearRatio      = "wearRatio"

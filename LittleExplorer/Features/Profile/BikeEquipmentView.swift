@@ -15,6 +15,7 @@ struct BikeEquipmentView: View {
 
     @State private var items: [BikeEquipment] = []
     @State private var totalKm: Double = 0
+    @State private var bikes: [BikeGear] = []
     @State private var loading: Bool = true
     @State private var error: String?
     @State private var pendingAction: BikeEquipment?
@@ -86,20 +87,47 @@ struct BikeEquipmentView: View {
     }
 
     private var headerCard: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("§ TOTAL").font(.system(size: 10).weight(.bold)).tracking(1.2).foregroundStyle(AppColors.terra)
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text("\(Int(totalKm.rounded()))")
-                        .font(.system(.title, design: .serif).weight(.heavy))
-                        .foregroundStyle(AppColors.ink)
-                    Text("km parcourus")
-                        .font(.system(size: 12)).foregroundStyle(AppColors.inkLight)
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("§ TOTAL").font(.system(size: 10).weight(.bold)).tracking(1.2).foregroundStyle(AppColors.terra)
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Text("\(Int(totalKm.rounded()))")
+                            .font(.system(.title, design: .serif).weight(.heavy))
+                            .foregroundStyle(AppColors.ink)
+                        Text("km parcourus")
+                            .font(.system(size: 12)).foregroundStyle(AppColors.inkLight)
+                    }
+                }
+                Spacer()
+                Text("\(items.count) pièce\(items.count > 1 ? "s" : "") suivie\(items.count > 1 ? "s" : "")")
+                    .font(.system(size: 11)).foregroundStyle(AppColors.inkLight)
+            }
+
+            // Per-bike breakdown — surfaced only when ≥1 bike is known.
+            // Lets the user see at a glance how the global total splits
+            // (the Canyon's 365 km vs. the e-bike's 125 km in our case),
+            // which is the whole point of bike-scoped wear tracking.
+            if !bikes.isEmpty {
+                Rectangle().fill(AppColors.creamBorder).frame(height: 1)
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(bikes) { bike in
+                        HStack {
+                            Text(bike.name)
+                                .font(.system(size: 12).weight(.semibold))
+                                .foregroundStyle(AppColors.ink)
+                            if bike.primaryBike {
+                                Text("PRINCIPAL")
+                                    .font(.system(size: 8).weight(.bold)).tracking(0.6)
+                                    .foregroundStyle(AppColors.terra)
+                            }
+                            Spacer()
+                            Text("\(Int(bike.totalKm.rounded())) km")
+                                .font(.system(size: 12)).foregroundStyle(AppColors.inkMid)
+                        }
+                    }
                 }
             }
-            Spacer()
-            Text("\(items.count) pièce\(items.count > 1 ? "s" : "") suivie\(items.count > 1 ? "s" : "")")
-                .font(.system(size: 11)).foregroundStyle(AppColors.inkLight)
         }
         .padding(14)
         .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 4))
@@ -189,6 +217,7 @@ struct BikeEquipmentView: View {
             let response = try await environment.api.fetchEquipment()
             totalKm = response.totalKm
             items = response.items
+            bikes = response.bikes ?? []
         } catch {
             self.error = "Erreur : \(error.localizedDescription)"
             Log.api.error("equipment fetch failed: \(error.localizedDescription, privacy: .public)")
@@ -250,9 +279,33 @@ private struct EquipmentCard: View {
                             .font(.system(.body, design: .serif).weight(.bold))
                             .foregroundStyle(AppColors.ink)
                             .lineLimit(2)
-                        Text(BikeEquipmentKind.label(for: item.kind).uppercased())
-                            .font(.system(size: 9).weight(.bold)).tracking(0.8)
-                            .foregroundStyle(AppColors.inkLight)
+                        HStack(spacing: 6) {
+                            Text(BikeEquipmentKind.label(for: item.kind).uppercased())
+                                .font(.system(size: 9).weight(.bold)).tracking(0.8)
+                                .foregroundStyle(AppColors.inkLight)
+                            // Bike chip — dashed border when unbound so
+                            // the user can spot "needs to be assigned"
+                            // pieces at a glance (these are scoped to
+                            // the global total, which inflates wear).
+                            if let bike = item.gearName, !bike.isEmpty {
+                                Text(bike)
+                                    .font(.system(size: 9).weight(.semibold))
+                                    .foregroundStyle(AppColors.inkMid)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1)
+                                    .background(AppColors.creamDark, in: RoundedRectangle(cornerRadius: 2))
+                            } else {
+                                Text("tous vélos")
+                                    .font(.system(size: 9).weight(.semibold))
+                                    .foregroundStyle(AppColors.terra)
+                                    .padding(.horizontal, 5)
+                                    .padding(.vertical, 1)
+                                    .overlay(
+                                        RoundedRectangle(cornerRadius: 2)
+                                            .stroke(AppColors.terra, style: StrokeStyle(lineWidth: 0.5, dash: [2, 2])),
+                                    )
+                            }
+                        }
                     }
                     Spacer()
                 }
