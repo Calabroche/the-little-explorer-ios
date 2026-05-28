@@ -36,6 +36,7 @@ final class WorkoutManager: NSObject {
     // ── Dependencies ───────────────────────────────────────────────
     private let healthStore = HKHealthStore()
     private let store: PendingRideStore
+    private weak var sessionManager: WatchSessionManager?
     private let logger = Logger(subsystem: "com.calabrese.little-explorer-ios.watchkitapp", category: "WorkoutManager")
 
     // ── Workout session + builder ──────────────────────────────────
@@ -54,8 +55,9 @@ final class WorkoutManager: NSObject {
     private var bufferedFixes: [CLLocation] = []
     private var bufferedHRSamples: [(t: Date, value: Double)] = []
 
-    init(store: PendingRideStore) {
+    init(store: PendingRideStore, session: WatchSessionManager? = nil) {
         self.store = store
+        self.sessionManager = session
         super.init()
         locationManager.delegate = self
         // Best-accuracy GPS — workout sessions get fewer power-budget
@@ -134,8 +136,16 @@ final class WorkoutManager: NSObject {
 
         // Flush the buffer to disk before we wipe local state.
         let ride = buildPendingRide(startedAt: startedAt)
-        store.save(ride)
+        let url = store.save(ride)
         logger.notice("Workout ended; saved pending ride \(ride.id, privacy: .public) with \(ride.gps.count) GPS points")
+
+        // Kick off the WCSession transfer immediately. If the iPhone
+        // isn't reachable, the transfer queues and resumes
+        // automatically on next reachability — that's the whole point
+        // of `transferFile` vs `sendMessage`.
+        if let url {
+            sessionManager?.transferRide(at: url, rideId: ride.id)
+        }
 
         // Reset state so the StartView is ready for another ride.
         isActive = false

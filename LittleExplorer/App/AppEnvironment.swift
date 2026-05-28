@@ -36,8 +36,18 @@ final class AppEnvironment {
     init() {
         let localRides = LocalRideStore()
         self.localRides = localRides
-        self.activityStore = ActivityStore(localStore: localRides)
+        let activityStore = ActivityStore(localStore: localRides)
+        self.activityStore = activityStore
         self.session = SessionStore()
+
+        // Phase 2 wiring: when a ride file arrives from the Apple
+        // Watch, the WatchSessionManager decodes it, hands it to the
+        // LocalRideStore, and asks the ActivityStore to re-publish so
+        // the feed picks it up without a manual refresh.
+        watch.attach(localStore: localRides) { [weak self] _ in
+            guard let self else { return }
+            self.activityStore.refreshLocal(user: self.currentUser)
+        }
     }
 
     /// Fire-and-forget HealthKit save. Each step is logged so the user
