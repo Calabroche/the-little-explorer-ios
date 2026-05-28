@@ -108,46 +108,65 @@ final class WorkoutManager: NSObject {
         logger.notice("Workout started")
     }
 
+    /// Toggle pause/resume. Always flips the local `isPaused` state
+    /// even if the underlying HKWorkoutSession is in a degraded state
+    /// (simulator, denied permissions, etc.) — the user must be able
+    /// to control the ride from the UI regardless of what HK is up to.
     func togglePause() {
-        guard let session else { return }
         if isPaused {
-            session.resume()
+            session?.resume()                            // no-op if session is nil/broken
             locationManager.startUpdatingLocation()
             isPaused = false
         } else {
-            session.pause()
+            session?.pause()
             locationManager.stopUpdatingLocation()
             isPaused = true
         }
+        logger.notice("togglePause -> isPaused=\(self.isPaused)")
     }
 
-    /// End the workout. Serialises the buffer into a PendingRide on
-    /// disk so Phase 2 can transfer it to the iPhone later.
+    /// End the workout. Designed to ALWAYS succeed from the user's
+    /// POV: flushes whatever's in the buffer to disk and resets the
+    /// state machine, even if HKWorkoutSession is broken (failed auth,
+    /// simulator quirks, etc.). The HK calls are best-effort with a
+    /// 3-second cap so the UI never hangs.
     func end() async {
-        guard let session, let startedAt else { return }
+        // No early-return: even if start() never fully kicked off, the
+        // user pressed End and they deserve a state reset.
+        logger.notice("end() called; isActive=\(self.isActive), session=\(self.session == nil ? "nil" : "set")")
         locationManager.stopUpdatingLocation()
-        session.end()
-        try? await builder?.endCollection(at: .now)
-        // `finishWorkout()` returns the saved HKWorkout — we don't
-        // need it (we have our own PendingRide model that captures the
-        // GPS trace HK wouldn't keep), so explicitly discard it.
-        _ = try? await builder?.finishWorkout()
+
+        // Best-effort HK teardown with timeout. HKWorkoutSession.end()
+        // is synchronous (just enqueues the state change), but the
+        // builder's endCollection / finishWorkout are awaitable and
+        // can hang in the simulator if the session never actually
+        // started — wrap with a 3-second budget.
+        session?.end()
+        await withTimeout(seconds: 3) { [builder] in
+            try? await builder?.endCollection(at: .now)
+            _ = try? await builder?.finishWorkout()
+        }
         clockTask?.cancel()
 
-        // Flush the buffer to disk before we wipe local state.
-        let ride = buildPendingRide(startedAt: startedAt)
-        let url = store.save(ride)
-        logger.notice("Workout ended; saved pending ride \(ride.id, privacy: .public) with \(ride.gps.count) GPS points")
-
-        // Kick off the WCSession transfer immediately. If the iPhone
-        // isn't reachable, the transfer queues and resumes
-        // automatically on next reachability — that's the whole point
-        // of `transferFile` vs `sendMessage`.
-        if let url {
-            sessionManager?.transferRide(at: url, rideId: ride.id)
+        // Flush the buffer to disk — only if we have a startedAt
+        // (otherwise there's nothing meaningful to save).
+        if let startedAt {
+            let ride = buildPendingRide(startedAt: startedAt)
+            let url = store.save(ride)
+            logger.notice("Workout ended; saved pending ride \(ride.id, privacy: .public) with \(ride.gps.count) GPS points")
+            // Kick off the WCSession transfer immediately. If the iPhone
+            // isn't reachable, the transfer queues and resumes
+            // automatically on next reachability — that's the whole point
+            // of `transferFile` vs `sendMessage`.
+            if let url {
+                sessionManager?.transferRide(at: url, rideId: ride.id)
+            }
+        } else {
+            logger.warning("end() called with no startedAt — nothing to save")
         }
 
         // Reset state so the StartView is ready for another ride.
+        // Done unconditionally so the user is always returned to home.
         isActive = false
         isPaused = false
         self.session = nil
@@ -156,6 +175,22 @@ final class WorkoutManager: NSObject {
         elapsed = 0
         bufferedFixes.removeAll()
         bufferedHRSamples.removeAll()
+    }
+
+    /// Race an async block against a wall-clock timeout. Used to cap
+    /// HK teardown so the End button never leaves the UI hung if
+    /// HealthKit decides to take forever (or never reply at all,
+    /// which the simulator likes to do when auth is missing).
+    private func withTimeout(seconds: Double, _ block: @escaping @Sendable () async -> Void) async {
+        await withTaskGroup(of: Void.self) { group in
+            group.addTask { await block() }
+            group.addTask {
+                try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
+            }
+            // Take whichever finishes first, then cancel the other.
+            await group.next()
+            group.cancelAll()
+        }
     }
 
     // ── Permissions ───────────────────────────────────────────────
