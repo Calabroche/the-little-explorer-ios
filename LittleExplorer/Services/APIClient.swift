@@ -171,6 +171,62 @@ actor APIClient {
         }
     }
 
+    // MARK: - Bike maintenance tracker
+
+    /// GET /api/equipment — returns the user's bike pieces with
+    /// computed wear ratios. Read-only on iOS for v1; add / edit
+    /// happens on the web because the forms are complex and the
+    /// 18 pieces are typically seeded once.
+    func fetchEquipment() async throws -> EquipmentResponse {
+        try await get("/api/equipment")
+    }
+
+    /// PATCH /api/equipment — toggles `replaced: true` on a row.
+    /// The server stamps `replaced_at = now()` and the next fetch
+    /// drops the item from the active list.
+    func markEquipmentReplaced(id: String) async throws {
+        let url = baseURL.appendingPathComponent("/api/equipment")
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token = authToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: [
+            "id":       id,
+            "replaced": true,
+        ])
+        let (data, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse {
+            if http.statusCode == 204 || (200..<300).contains(http.statusCode) { return }
+            if http.statusCode == 401 { throw APIError.unauthorized }
+            let preview = String(data: data.prefix(200), encoding: .utf8) ?? ""
+            Log.api.error("PATCH /api/equipment \(http.statusCode) · \(preview, privacy: .public)")
+            throw APIError.http(http.statusCode)
+        }
+    }
+
+    /// DELETE /api/equipment — hard-delete (vs `markReplaced` which
+    /// keeps the row in history). Used for typos / mis-added items.
+    func deleteEquipment(id: String) async throws {
+        let url = baseURL.appendingPathComponent("/api/equipment")
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token = authToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["id": id])
+        let (data, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse {
+            if http.statusCode == 204 || (200..<300).contains(http.statusCode) { return }
+            if http.statusCode == 401 { throw APIError.unauthorized }
+            let preview = String(data: data.prefix(200), encoding: .utf8) ?? ""
+            Log.api.error("DELETE /api/equipment \(http.statusCode) · \(preview, privacy: .public)")
+            throw APIError.http(http.statusCode)
+        }
+    }
+
     // MARK: - Admin
 
     struct AdminUser: Decodable, Sendable, Identifiable {

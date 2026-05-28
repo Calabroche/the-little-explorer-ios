@@ -39,6 +39,7 @@ struct ProfileView: View {
                 case .admin:            AdminView()
                 case .diagnostics:      DiagnosticsView()
                 case .bluetoothSensors: BluetoothSensorsView()
+                case .bikeEquipment:    BikeEquipmentView()
                 }
             }
         }
@@ -90,6 +91,11 @@ struct ProfileView: View {
 
                 NavigationLink(value: ProfileRoute.bluetoothSensors) {
                     actionRow(symbol: "antenna.radiowaves.left.and.right", text: "Capteurs Bluetooth", chevron: true)
+                }
+                .buttonStyle(.plain)
+
+                NavigationLink(value: ProfileRoute.bikeEquipment) {
+                    actionRow(symbol: "wrench.adjustable", text: "Matériel", chevron: true)
                 }
                 .buttonStyle(.plain)
 
@@ -393,7 +399,7 @@ struct ProfileView: View {
 }
 
 enum ProfileRoute: Hashable {
-    case settings, admin, diagnostics, bluetoothSensors
+    case settings, admin, diagnostics, bluetoothSensors, bikeEquipment
 }
 
 // MARK: - Theme segmented control
