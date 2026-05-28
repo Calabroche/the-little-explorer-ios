@@ -56,6 +56,9 @@ final class NavigateState {
     private let location: LocationManager
     private let activityManager: RideActivityManager?
     private let synthesizer = AVSpeechSynthesizer()
+    /// Holds onto the speech delegate so AVSpeechSynthesizer doesn't
+    /// drop the reference (it's a `weak` property on the synthesizer).
+    private let speechDelegate = SpeechAudioSessionManager()
     private var trackingTask: Task<Void, Never>?
     private var announced: [Int: Set<ManeuverFormatter.AnnounceLevel>] = [:]
     private var lastPromptedStep: Int?
@@ -65,6 +68,7 @@ final class NavigateState {
         self.api = api
         self.location = location
         self.activityManager = activityManager
+        self.synthesizer.delegate = speechDelegate
     }
 
     func start(itinerary: Itinerary) async {
@@ -243,10 +247,54 @@ final class NavigateState {
     }
 
     private func speak(text: String) {
+        // Honor the user's toggle. Saved per-device under
+        // tle_voice_prompts_enabled — see SettingsView for the UI.
+        // Defaults to true so the feature is discoverable on first
+        // navigation.
+        let enabled = UserDefaults.standard.object(forKey: "tle_voice_prompts_enabled") as? Bool ?? true
+        guard enabled else { return }
+
+        // Activate the audio session BEFORE queuing the utterance.
+        // Without this:
+        //   * Phone on silent mode → no sound (mute switch overrides
+        //     speech). The .playback category bypasses the mute switch
+        //     (same as Apple Maps).
+        //   * Screen locked → speech is suppressed. .playback also
+        //     keeps audio flowing under lock screen (we already have
+        //     UIBackgroundModes: audio in project.yml).
+        //   * Background music (Spotify, Apple Music, podcast) → our
+        //     speech wouldn't be heard. .duckOthers temporarily lowers
+        //     the other app's volume during our utterance.
+        // The SpeechAudioSessionManager delegate restores normal volume
+        // when the utterance ends.
+        do {
+            try AVAudioSession.sharedInstance().setCategory(
+                .playback,
+                mode: .voicePrompt,
+                options: [.duckOthers, .mixWithOthers],
+            )
+            try AVAudioSession.sharedInstance().setActive(true, options: [])
+        } catch {
+            Log.tracking.error("voice: audio session activate failed: \(error.localizedDescription, privacy: .public)")
+        }
+
         let utterance = AVSpeechUtterance(string: text)
         utterance.voice = AVSpeechSynthesisVoice(language: lang == .fr ? "fr-FR" : "en-US")
         utterance.rate = 0.5
+        // Slight pre-utterance silence so a duck transition from
+        // background music feels less abrupt.
+        utterance.preUtteranceDelay = 0.15
+        utterance.postUtteranceDelay = 0.1
         synthesizer.speak(utterance)
+    }
+
+    /// Speak an arbitrary sentence on demand. Used by the "Test voice"
+    /// button in Settings so the user can verify the toggle / volume /
+    /// duck-others behaviour without starting a real navigation.
+    func speakTestPhrase() {
+        speak(text: lang == .fr
+            ? "Dans 300 mètres, tournez à droite sur Rue de la République."
+            : "In 300 meters, turn right onto Republic Street.")
     }
 
     /// Mirror the current navigation state into the Live Activity so
@@ -360,5 +408,34 @@ final class NavigateState {
         let h = s / 3600
         let m = (s % 3600) / 60
         return h > 0 ? "\(h)h \(String(format: "%02d", m))m" : "\(m) min"
+    }
+}
+
+/// AVSpeechSynthesizer delegate that pairs each utterance with an
+/// audio-session deactivation so background music (Spotify, Apple
+/// Music…) returns to full volume after our turn-by-turn prompt.
+///
+/// We keep this in a separate type because the synthesizer's delegate
+/// property is `weak` — if it pointed at NavigateState directly we'd
+/// either have to hold a strong reference somewhere (the wrapper
+/// pattern is cleaner), or risk the delegate being deallocated
+/// mid-flight.
+final class SpeechAudioSessionManager: NSObject, AVSpeechSynthesizerDelegate {
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didFinish utterance: AVSpeechUtterance) {
+        deactivate()
+    }
+    func speechSynthesizer(_ synthesizer: AVSpeechSynthesizer, didCancel utterance: AVSpeechUtterance) {
+        deactivate()
+    }
+
+    private func deactivate() {
+        do {
+            try AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+        } catch {
+            // Best-effort. If it fails the audio session stays
+            // activated which means background music keeps ducking
+            // until the OS resets it on app background. Not great
+            // but not breaking.
+        }
     }
 }

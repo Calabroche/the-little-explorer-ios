@@ -1,3 +1,4 @@
+import AVFoundation
 import SwiftUI
 
 /// Mirror of the web's `/settings` page. Edits rider_kg, bike_kg, and
@@ -18,6 +19,13 @@ struct SettingsView: View {
     @State private var isDisconnectingStrava: Bool = false
     @State private var dataActionError: String?
     @State private var exportSheetItem: ExportSheetItem?
+
+    // Voice prompts during turn-by-turn navigation. Persisted in
+    // UserDefaults so the NavigateState (which lives in a separate
+    // module) can read the same key.
+    @AppStorage("tle_voice_prompts_enabled") private var voicePromptsEnabled: Bool = true
+    @State private var testVoiceState: VoiceTestState = .idle
+    enum VoiceTestState { case idle, playing }
 
     @State private var isSaving: Bool = false
     @State private var saveMessage: String?
@@ -131,6 +139,42 @@ struct SettingsView: View {
                     }
                 }
                 .disabled(isSaving)
+            }
+
+            // Turn-by-turn voice prompts during navigation. Toggle
+            // here flips the UserDefaults key the NavigateState reads
+            // on every speak() call. Audio plays through the phone
+            // speaker (or paired Bluetooth headphones) and ducks
+            // background music — same UX as Apple Maps.
+            Section("Navigation vocale") {
+                Toggle(isOn: $voicePromptsEnabled) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Annonces vocales pendant la nav")
+                        Text("Lit les virages à voix haute à 1.2 km / 500 m / 150 m / 30 m de chaque maneuver. Bypass le bouton silence (catégorie .playback) et duck Spotify pendant l'annonce.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+                .tint(AppColors.terra)
+
+                if voicePromptsEnabled {
+                    Button {
+                        Task { await testVoice() }
+                    } label: {
+                        HStack {
+                            if testVoiceState == .playing { ProgressView().scaleEffect(0.8) }
+                            Label(
+                                testVoiceState == .playing ? "Lecture en cours…" : "Tester la voix",
+                                systemImage: "speaker.wave.2.fill",
+                            )
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                    .disabled(testVoiceState == .playing)
+                    Text("Le test joue une annonce type. Vérifie que le bouton silence n'est pas activé et le volume monté.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
             }
 
             // RGPD art. 20 portability + granular Strava unlink. Both
@@ -342,6 +386,39 @@ struct SettingsView: View {
     private func parseDouble(_ s: String) -> Double? {
         let normalized = s.replacingOccurrences(of: ",", with: ".")
         return Double(normalized.trimmingCharacters(in: .whitespaces))
+    }
+
+    /// Plays a sample turn-by-turn prompt so the user can confirm the
+    /// toggle + system volume + audio routing all work before relying
+    /// on the prompts during a real navigation. Mirrors the audio
+    /// session config NavigateState uses (.playback + .duckOthers).
+    @MainActor
+    private func testVoice() async {
+        testVoiceState = .playing
+        do {
+            try AVAudioSession.sharedInstance().setCategory(
+                .playback,
+                mode: .voicePrompt,
+                options: [.duckOthers, .mixWithOthers],
+            )
+            try AVAudioSession.sharedInstance().setActive(true, options: [])
+        } catch {
+            Log.tracking.error("test voice: audio session activate failed: \(error.localizedDescription, privacy: .public)")
+        }
+        let synth = AVSpeechSynthesizer()
+        let utterance = AVSpeechUtterance(string:
+            "Dans 300 mètres, tournez à droite sur Rue de la République.")
+        utterance.voice = AVSpeechSynthesisVoice(language: "fr-FR")
+        utterance.rate = 0.5
+        utterance.preUtteranceDelay = 0.15
+        utterance.postUtteranceDelay = 0.1
+        synth.speak(utterance)
+        // Wait for the synth to finish — utterance is ~4s; we wait
+        // a bit longer to cover the duck-restore transition before
+        // flipping the button back to "Tester la voix".
+        try? await Task.sleep(for: .seconds(5))
+        try? AVAudioSession.sharedInstance().setActive(false, options: [.notifyOthersOnDeactivation])
+        testVoiceState = .idle
     }
 
     /// Fetches the user's export from /api/me/export, writes it to a
