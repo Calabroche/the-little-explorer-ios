@@ -2,27 +2,155 @@ import CoreLocation
 import Foundation
 import HealthKit
 import Observation
+import os
 
-/// HKWorkoutSession wrapper for the watch. Pulls heart rate from the
-/// watch's sensors and exposes a simple Observable surface.
+/// Drives a standalone ride on the Apple Watch.
+///
+///   • `HKWorkoutSession` keeps the app alive in background + lets
+///     HKLiveWorkoutBuilder auto-collect heart rate from the wrist.
+///   • `CLLocationManager` provides the GPS trace — sampled, validated
+///     (drop fixes with poor horizontal accuracy), and used to compute
+///     distance + speed. We do NOT trust HK's accelerometer-derived
+///     distance for cycling — it's only OK for running.
+///   • Each accepted GPS fix is appended to the live buffer. On End,
+///     the buffer is serialised into a `PendingRide` and handed to
+///     `PendingRideStore` for transfer in Phase 2.
+///
+/// All UI-visible state lives here as `@Observable` properties so the
+/// view can re-render without prop-drilling.
 @Observable
 @MainActor
 final class WorkoutManager: NSObject {
+    // ── Observable surface ─────────────────────────────────────────
     private(set) var isActive = false
     private(set) var isPaused = false
     private(set) var elapsed: TimeInterval = 0
     private(set) var distanceMeters: Double = 0
     private(set) var speedKmh: Double = 0
     private(set) var heartRate: Int?
+    /// Set when the user has denied location access. The view uses
+    /// this to render an "open Settings" hint instead of silently
+    /// recording a ride with no GPS trace.
+    private(set) var locationDenied = false
 
+    // ── Dependencies ───────────────────────────────────────────────
     private let healthStore = HKHealthStore()
+    private let store: PendingRideStore
+    private let logger = Logger(subsystem: "com.calabrese.little-explorer-ios.watchkitapp", category: "WorkoutManager")
+
+    // ── Workout session + builder ──────────────────────────────────
     private var session: HKWorkoutSession?
     private var builder: HKLiveWorkoutBuilder?
     private var startedAt: Date?
     private var clockTask: Task<Void, Never>?
 
+    // ── Location ───────────────────────────────────────────────────
+    // CLLocationManager itself is not Sendable — keep it main-actor
+    // bound and route delegate callbacks through hops back to the
+    // actor.
+    private let locationManager = CLLocationManager()
+
+    // ── Buffer for the ride being recorded ─────────────────────────
+    private var bufferedFixes: [CLLocation] = []
+    private var bufferedHRSamples: [(t: Date, value: Double)] = []
+
+    init(store: PendingRideStore) {
+        self.store = store
+        super.init()
+        locationManager.delegate = self
+        // Best-accuracy GPS — workout sessions get fewer power-budget
+        // penalties from the OS than background apps so this is OK.
+        locationManager.desiredAccuracy = kCLLocationAccuracyBest
+        // 5 m filter cuts redundant samples when stopped at lights
+        // without losing tracking resolution.
+        locationManager.distanceFilter = 5
+    }
+
+    // ── Lifecycle ──────────────────────────────────────────────────
+
     func start() async {
         guard !isActive else { return }
+        await requestHealthKit()
+        await ensureLocationAuthorization()
+
+        let configuration = HKWorkoutConfiguration()
+        configuration.activityType = .cycling
+        configuration.locationType = .outdoor
+
+        do {
+            session = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)
+            builder = session?.associatedWorkoutBuilder()
+        } catch {
+            logger.error("Couldn't create workout session: \(error.localizedDescription, privacy: .public)")
+            return
+        }
+        builder?.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: configuration)
+        session?.delegate = self
+        builder?.delegate = self
+
+        let now = Date()
+        startedAt = now
+        bufferedFixes.removeAll(keepingCapacity: true)
+        bufferedHRSamples.removeAll(keepingCapacity: true)
+        distanceMeters = 0
+        speedKmh = 0
+        heartRate = nil
+
+        session?.startActivity(with: now)
+        try? await builder?.beginCollection(at: now)
+        locationManager.startUpdatingLocation()
+
+        isActive = true
+        isPaused = false
+        startClock()
+        logger.notice("Workout started")
+    }
+
+    func togglePause() {
+        guard let session else { return }
+        if isPaused {
+            session.resume()
+            locationManager.startUpdatingLocation()
+            isPaused = false
+        } else {
+            session.pause()
+            locationManager.stopUpdatingLocation()
+            isPaused = true
+        }
+    }
+
+    /// End the workout. Serialises the buffer into a PendingRide on
+    /// disk so Phase 2 can transfer it to the iPhone later.
+    func end() async {
+        guard let session, let startedAt else { return }
+        locationManager.stopUpdatingLocation()
+        session.end()
+        try? await builder?.endCollection(at: .now)
+        // `finishWorkout()` returns the saved HKWorkout — we don't
+        // need it (we have our own PendingRide model that captures the
+        // GPS trace HK wouldn't keep), so explicitly discard it.
+        _ = try? await builder?.finishWorkout()
+        clockTask?.cancel()
+
+        // Flush the buffer to disk before we wipe local state.
+        let ride = buildPendingRide(startedAt: startedAt)
+        store.save(ride)
+        logger.notice("Workout ended; saved pending ride \(ride.id, privacy: .public) with \(ride.gps.count) GPS points")
+
+        // Reset state so the StartView is ready for another ride.
+        isActive = false
+        isPaused = false
+        self.session = nil
+        builder = nil
+        self.startedAt = nil
+        elapsed = 0
+        bufferedFixes.removeAll()
+        bufferedHRSamples.removeAll()
+    }
+
+    // ── Permissions ───────────────────────────────────────────────
+
+    private func requestHealthKit() async {
         let typesToShare: Set<HKSampleType> = [HKQuantityType.workoutType()]
         let typesToRead: Set<HKObjectType> = [
             HKQuantityType(.heartRate),
@@ -33,64 +161,114 @@ final class WorkoutManager: NSObject {
         do {
             try await healthStore.requestAuthorization(toShare: typesToShare, read: typesToRead)
         } catch {
-            print("HealthKit authorization failed: \(error)")
-            return
-        }
-
-        let configuration = HKWorkoutConfiguration()
-        configuration.activityType = .cycling
-        configuration.locationType = .outdoor
-
-        do {
-            session = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)
-            builder = session?.associatedWorkoutBuilder()
-        } catch {
-            print("Couldn't create workout session: \(error)")
-            return
-        }
-        builder?.dataSource = HKLiveWorkoutDataSource(healthStore: healthStore, workoutConfiguration: configuration)
-        session?.delegate = self
-        builder?.delegate = self
-
-        let now = Date()
-        startedAt = now
-        session?.startActivity(with: now)
-        try? await builder?.beginCollection(at: now)
-        isActive = true
-        startClock()
-    }
-
-    func togglePause() {
-        guard let session else { return }
-        if isPaused {
-            session.resume()
-            isPaused = false
-        } else {
-            session.pause()
-            isPaused = true
+            logger.warning("HealthKit authorization failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
-    func end() async {
-        guard let session else { return }
-        session.end()
-        try? await builder?.endCollection(at: .now)
-        try? await builder?.finishWorkout()
-        clockTask?.cancel()
-        isActive = false
-        isPaused = false
+    private func ensureLocationAuthorization() async {
+        switch locationManager.authorizationStatus {
+        case .notDetermined:
+            locationManager.requestWhenInUseAuthorization()
+            // CLLocationManager doesn't await — we proceed optimistically
+            // and the delegate callback will mark `locationDenied` if
+            // the user refuses. Subsequent ride starts pick that up.
+        case .denied, .restricted:
+            locationDenied = true
+        default:
+            locationDenied = false
+        }
     }
+
+    // ── Clock loop (1 Hz UI refresh while active) ──────────────────
 
     private func startClock() {
+        clockTask?.cancel()
         clockTask = Task { [weak self] in
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
-                guard let self, self.isActive, !self.isPaused, let start = self.startedAt else { continue }
+                guard let self else { return }
+                guard self.isActive, !self.isPaused, let start = self.startedAt else { continue }
                 self.elapsed = Date.now.timeIntervalSince(start)
             }
         }
     }
+
+    // ── Build a PendingRide from the buffer ───────────────────────
+
+    private func buildPendingRide(startedAt: Date) -> PendingRide {
+        let fixes = bufferedFixes
+        let baseTime = fixes.first?.timestamp ?? startedAt
+
+        // Path + per-point timestamps (relative seconds-from-start).
+        let coords = fixes.map { Coordinate(lat: $0.coordinate.latitude, lng: $0.coordinate.longitude) }
+        let times  = fixes.map { $0.timestamp.timeIntervalSince(baseTime) }
+        let alts   = fixes.map { $0.altitude }
+
+        // HR samples are timestamped from HK. Align them to the GPS
+        // timeline by nearest-neighbour interpolation so the iPhone
+        // can chart HR over distance without re-doing the work. Empty
+        // array when no HR was collected.
+        let hrAligned = bufferedHRSamples.isEmpty
+            ? []
+            : alignHRToFixes(fixes: fixes, samples: bufferedHRSamples)
+
+        // Total distance from the GPS chain. Strava uses the same
+        // approach (sum of segment lengths), which gives nice round
+        // numbers on flat rides and slightly under-counts on switchbacks.
+        var totalM: Double = 0
+        for i in 1..<fixes.count {
+            totalM += fixes[i].distance(from: fixes[i - 1])
+        }
+
+        // ID convention: negative timestamp (ms) so it can't collide
+        // with a positive Strava activity id when the iPhone merges
+        // the lists. Matches LocalRideStore on iOS.
+        let id = -Int64(startedAt.timeIntervalSince1970 * 1000)
+
+        return PendingRide(
+            id: id,
+            date: ISO8601DateFormatter().string(from: startedAt),
+            durationSeconds: Date.now.timeIntervalSince(startedAt),
+            gps: coords,
+            timeS: times,
+            altitude: alts,
+            heartrate: hrAligned,
+            distanceM: totalM,
+            sport: "cycling",
+        )
+    }
+
+    /// Nearest-neighbour resample of (timestamped) HR samples onto the
+    /// GPS fix timeline. Each output value is the HR sample closest in
+    /// time to the corresponding fix. Trades accuracy for simplicity —
+    /// for our chart purposes this is fine.
+    private func alignHRToFixes(
+        fixes: [CLLocation],
+        samples: [(t: Date, value: Double)],
+    ) -> [Double] {
+        guard !samples.isEmpty else { return [] }
+        let sorted = samples.sorted { $0.t < $1.t }
+        return fixes.map { fix in
+            // Linear scan; samples are small (≤ a few hundred per ride).
+            var bestDiff = Double.infinity
+            var best = sorted[0].value
+            for s in sorted {
+                let diff = abs(s.t.timeIntervalSince(fix.timestamp))
+                if diff < bestDiff {
+                    bestDiff = diff
+                    best = s.value
+                } else if diff > bestDiff {
+                    // sorted timestamps → can early-exit once we start
+                    // getting farther away.
+                    break
+                }
+            }
+            return best
+        }
+    }
 }
+
+// ── HKWorkoutSessionDelegate ──────────────────────────────────────
 
 extension WorkoutManager: HKWorkoutSessionDelegate {
     nonisolated func workoutSession(
@@ -101,9 +279,14 @@ extension WorkoutManager: HKWorkoutSessionDelegate {
     ) {}
 
     nonisolated func workoutSession(_ workoutSession: HKWorkoutSession, didFailWithError error: Error) {
-        print("Workout session failed: \(error)")
+        let message = error.localizedDescription
+        Task { @MainActor in
+            self.logger.error("Workout session failed: \(message, privacy: .public)")
+        }
     }
 }
+
+// ── HKLiveWorkoutBuilderDelegate ──────────────────────────────────
 
 extension WorkoutManager: HKLiveWorkoutBuilderDelegate {
     nonisolated func workoutBuilderDidCollectEvent(_ workoutBuilder: HKLiveWorkoutBuilder) {}
@@ -125,14 +308,59 @@ extension WorkoutManager: HKLiveWorkoutBuilderDelegate {
             let unit = HKUnit.count().unitDivided(by: .minute())
             if let value = stats.mostRecentQuantity()?.doubleValue(for: unit) {
                 heartRate = Int(value)
-            }
-        case HKQuantityType(.distanceCycling):
-            let unit = HKUnit.meter()
-            if let value = stats.sumQuantity()?.doubleValue(for: unit) {
-                distanceMeters = value
+                bufferedHRSamples.append((t: Date.now, value: value))
             }
         default:
+            // We deliberately ignore HK's distanceCycling — our GPS
+            // chain is the source of truth (more accurate when GPS is
+            // available, fails gracefully to 0 when not).
             break
+        }
+    }
+}
+
+// ── CLLocationManagerDelegate ─────────────────────────────────────
+
+extension WorkoutManager: CLLocationManagerDelegate {
+    nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
+        let fixes = locations
+        Task { @MainActor in
+            self.ingest(fixes: fixes)
+        }
+    }
+
+    nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        let message = error.localizedDescription
+        Task { @MainActor in
+            self.logger.warning("Location error: \(message, privacy: .public)")
+        }
+    }
+
+    nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
+        let status = manager.authorizationStatus
+        Task { @MainActor in
+            self.locationDenied = (status == .denied || status == .restricted)
+        }
+    }
+
+    /// Per-fix ingestion. Reject low-quality samples (negative
+    /// accuracy = unknown, or > 30 m horizontal error = urban canyon
+    /// noise) so the trace doesn't get a "GPS spike" that adds 50 m
+    /// of phantom distance every time we pass under a bridge.
+    @MainActor
+    private func ingest(fixes: [CLLocation]) {
+        guard isActive, !isPaused else { return }
+        for fix in fixes {
+            guard fix.horizontalAccuracy > 0, fix.horizontalAccuracy < 30 else { continue }
+            // Distance update — append, then update the running total
+            // and current speed from the latest pair.
+            if let last = bufferedFixes.last {
+                distanceMeters += fix.distance(from: last)
+            }
+            bufferedFixes.append(fix)
+            // CLLocation.speed is m/s; mask to >= 0 (the API returns
+            // a negative value when speed is unknown).
+            speedKmh = max(0, fix.speed) * 3.6
         }
     }
 }
