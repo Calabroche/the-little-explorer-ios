@@ -66,6 +66,16 @@ final class RideTracker {
     private(set) var sampledSpeedKmh: [Double] = []
     private(set) var sampledTimeS: [Double] = []
     private(set) var sampledGps: [Coordinate] = []
+    /// HR samples captured from a paired BLE heart-rate sensor. Aligns
+    /// with the time axis of `sampledTimeS` — we append a row at every
+    /// GPS update so the indices stay parallel even if the sensor
+    /// pushes more frequently than GPS. Last-known BPM is repeated
+    /// when no fresh sensor reading is available.
+    private(set) var sampledHeartrate: [Int] = []
+    /// Most recent BPM from the BLE sensor; nil if no sensor paired.
+    /// Surfaced live to the recorder view and pushed to the Live
+    /// Activity / Watch so the user sees their HR in real time.
+    private(set) var currentBpm: Int?
 
     private var startedAt: Date?
     private var trackingTask: Task<Void, Never>?
@@ -75,15 +85,30 @@ final class RideTracker {
     private let location: LocationManager
     private let activityManager: RideActivityManager
     private let watch: WatchSessionManager
+    /// Optional BLE heart-rate monitor. When non-nil and connected,
+    /// each fresh BPM reading is captured into `currentBpm` (and
+    /// `sampledHeartrate` is filled on every GPS sample so the time
+    /// series stays aligned).
+    private weak var heartRate: HeartRateMonitor?
 
     init(
         location: LocationManager,
         activityManager: RideActivityManager,
         watch: WatchSessionManager,
+        heartRate: HeartRateMonitor? = nil,
     ) {
         self.location = location
         self.activityManager = activityManager
         self.watch = watch
+        self.heartRate = heartRate
+        // Hook into the BLE sensor's BPM push — `onBpmUpdate` fires
+        // every time a fresh reading arrives (~1 Hz for most chest
+        // straps). We just update the live value here; the sample
+        // gets snapshotted into the array on the next GPS ingest so
+        // the time series stays parallel to distance / altitude.
+        heartRate?.onBpmUpdate = { [weak self] bpm in
+            Task { @MainActor in self?.currentBpm = bpm }
+        }
     }
 
     /// Start a ride for the given subtype. Outdoor subtypes spin up
@@ -201,6 +226,15 @@ final class RideTracker {
             ? Int((durationSeconds / distanceKm).rounded())
             : nil
 
+        // Heart-rate aggregates computed outside the constructor call —
+        // the compiler chokes on the complexity if we inline them.
+        // RideRecord shape: avgHr is Double?, maxHr is Int? — match exactly.
+        let hrStreamHasReadings = sampledHeartrate.contains(where: { $0 > 0 })
+        let hrStream: [Double]? = hrStreamHasReadings ? sampledHeartrate.map(Double.init) : nil
+        let avgHr: Double? = averageNonZero(sampledHeartrate).map(Double.init)
+        let nonZeroHr = sampledHeartrate.filter { $0 > 0 }
+        let maxHr: Int? = nonZeroHr.max()
+
         return RideRecord(
             id: -Int(startedAt.timeIntervalSince1970),  // negative timestamp keeps local ids out of Strava's positive id space
             type: backendType(for: sport),
@@ -219,13 +253,13 @@ final class RideTracker {
             gps: sampledGps,
             altitude: sampledAltitude.isEmpty ? nil : sampledAltitude,
             speedKmh: sampledSpeedKmh.isEmpty ? nil : sampledSpeedKmh,
-            heartrate: nil,
+            heartrate: hrStream,
             distanceM: sampledDistanceM.isEmpty ? nil : sampledDistanceM,
             timeS: sampledTimeS.isEmpty ? nil : sampledTimeS,
             maxIncline: maxIncline,
             minIncline: minIncline,
-            avgHr: nil,
-            maxHr: nil,
+            avgHr: avgHr,
+            maxHr: maxHr,
             calories: nil,
             np: nil,
             avgPower: nil,
@@ -262,6 +296,8 @@ final class RideTracker {
         sampledSpeedKmh.removeAll()
         sampledTimeS.removeAll()
         sampledGps.removeAll()
+        sampledHeartrate.removeAll()
+        currentBpm = nil
         lastLocation = nil
         startedAt = nil
         selectedSport = nil
@@ -280,6 +316,14 @@ final class RideTracker {
         case .walking:  return "walking"
         case .swim:     return "swim"
         }
+    }
+
+    /// Mean of non-zero samples, rounded to integer. Returns nil if
+    /// no positive reading was captured (no BLE sensor connected).
+    private func averageNonZero(_ values: [Int]) -> Int? {
+        let nonZero = values.filter { $0 > 0 }
+        guard !nonZero.isEmpty else { return nil }
+        return Int((Double(nonZero.reduce(0, +)) / Double(nonZero.count)).rounded())
     }
 
     private func formatDuration(seconds: TimeInterval) -> String {
@@ -419,6 +463,11 @@ final class RideTracker {
         if let startedAt {
             sampledTimeS.append(loc.timestamp.timeIntervalSince(startedAt))
         }
+        // Snapshot the latest BPM from the BLE sensor (or 0 if no
+        // sensor connected). Doing this on every GPS ingest keeps the
+        // heartrate array index-aligned with distanceM / altitude /
+        // timeS — the detail view assumes parallel arrays.
+        sampledHeartrate.append(currentBpm ?? 0)
         lastLocation = loc
     }
 

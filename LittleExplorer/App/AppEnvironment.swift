@@ -24,6 +24,10 @@ final class AppEnvironment {
     let localRides: LocalRideStore
     let activityStore: ActivityStore
     let healthKit = HealthKitService()
+    /// Live BLE heart-rate monitor. Doesn't instantiate the CB stack
+    /// until the user opens the pairing screen — keeps the system
+    /// Bluetooth permission prompt from firing on app launch.
+    let heartRate = HeartRateMonitor()
 
     /// Bearer-token session, lazy-loaded from Keychain on init. RootView
     /// reads this to decide LoginView vs the tab bar.

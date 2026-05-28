@@ -395,6 +395,7 @@ struct RideTrackerView: View {
             location: environment.location,
             activityManager: environment.activityManager,
             watch: environment.watch,
+            heartRate: environment.heartRate,
         )
     }
 }
