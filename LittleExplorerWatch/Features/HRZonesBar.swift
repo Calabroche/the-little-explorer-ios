@@ -76,12 +76,12 @@ struct HRZonesBar: View {
                     if i == currentZone {
                         Triangle()
                             .fill(.white)
-                            .frame(width: 10, height: 6)
-                            .frame(minWidth: 110, maxWidth: .infinity)
+                            .frame(width: 9, height: 5)
+                            .frame(minWidth: 100, maxWidth: .infinity)
                             .layoutPriority(10)
                     } else {
                         Color.clear
-                            .frame(width: 22, height: 6)
+                            .frame(width: 20, height: 5)
                             .layoutPriority(1)
                     }
                 }
@@ -93,34 +93,31 @@ struct HRZonesBar: View {
     private func cell(for index: Int) -> some View {
         let active = (index == currentZone)
         if active {
-            // Active pill — generous height (44 pt) so the
-            // "ZONE N" badge feels like the focal point of the
-            // bottom band, not an afterthought. Matches Apple
-            // Workout's pill proportions on Ultra screens.
-            //   • height 44 pt vs 34 pt inactive chips
-            //   • font 15 pt heavy + heart glyph
-            //   • rounded pill (cornerRadius 22 pt = half height)
+            // Active pill — 40pt height fits below the slimmer
+            // 38pt metric digits without crowding the screen.
+            //   • height 40 pt vs 30 pt inactive chips
+            //   • font 14 pt heavy + heart glyph
+            //   • rounded pill (cornerRadius 20 pt = half height)
             HStack(spacing: 5) {
                 Image(systemName: "heart.fill")
-                    .font(.system(size: 15, weight: .bold))
+                    .font(.system(size: 14, weight: .bold))
                 Text("ZONE \(index + 1)")
-                    .font(.system(size: 15, weight: .heavy))
+                    .font(.system(size: 14, weight: .heavy))
                     .tracking(0.3)
                     .fixedSize(horizontal: true, vertical: false)
             }
             .foregroundStyle(textColor(forZone: index))
-            .padding(.horizontal, 12)
-            .frame(minWidth: 110, maxWidth: .infinity)
-            .frame(height: 44)
-            .background(colors[index], in: RoundedRectangle(cornerRadius: 22))
+            .padding(.horizontal, 11)
+            .frame(minWidth: 100, maxWidth: .infinity)
+            .frame(height: 40)
+            .background(colors[index], in: RoundedRectangle(cornerRadius: 20))
             .layoutPriority(10)
         } else {
-            // Inactive cells: taller to balance the bigger active
-            // pill (22 × 34 pt baseline). Still narrow enough that
-            // the pill keeps ~55 % of the bar width.
-            RoundedRectangle(cornerRadius: 7)
+            // Inactive cells: 20 × 30 pt, proportional to the
+            // 40 pt active pill. Keeps the bar visually balanced.
+            RoundedRectangle(cornerRadius: 6)
                 .fill(colors[index])
-                .frame(width: 22, height: 34)
+                .frame(width: 20, height: 30)
                 .layoutPriority(1)
         }
     }

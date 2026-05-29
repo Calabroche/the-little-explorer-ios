@@ -43,12 +43,12 @@ private struct MetricsPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Grid takes its intrinsic height. Value font 42pt —
-            // 45 was the right perceptual size but the top-left
-            // letter ("T" of TIME) was clipped by the Ultra's
-            // rounded corner. Pulled back to 42 + added top/side
-            // padding so every label clears the corner curve.
-            // Row gaps 8pt to keep the HR pill room below.
+            // Grid takes its intrinsic height. Value font 38pt —
+            // smaller than 42 so the top row clears the Ultra's
+            // rounded corner curve AND leaves slack for the HR
+            // pill below. The corner clipped "TIME" → "IME" at
+            // 42pt even with 10pt side padding because the corner
+            // radius eats into the first ~14pt of the top-left.
             Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 8) {
                 GridRow {
                     cell("TIME",  value: formatDuration(workoutManager.elapsed),     tint: .white)
@@ -63,29 +63,28 @@ private struct MetricsPage: View {
                     cell("CLIMB", value: "+\(Int(workoutManager.elevationGain)) m",        tint: .orange)
                 }
             }
-            .padding(.horizontal, 10)
-            .padding(.top, 6)
+            .padding(.horizontal, 14)
+            .padding(.top, 10)
 
             Spacer(minLength: 2)
 
-            // HR zone strip — pill at 44pt height matches the
-            // bigger metric digits. Reserved 52pt: 44pt pill +
-            // 2pt VStack gap + 6pt triangle. Side padding 10pt
-            // mirrors the grid so the strip aligns with the cell
-            // columns above. Bottom padding 0 keeps it flush.
+            // HR zone strip — slimmed to match the smaller
+            // metric digits. Reserved 48pt: 40pt pill + 2pt
+            // VStack gap + 6pt triangle. Side padding 14pt
+            // mirrors the grid above so columns align.
             if !isDimmed {
                 HRZonesBar(bpm: workoutManager.heartRate)
-                    .frame(minHeight: 52)
-                    .padding(.horizontal, 10)
-                    .padding(.bottom, 0)
+                    .frame(minHeight: 48)
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, 2)
             }
         }
     }
 
     /// Single metric cell — label on top in tiny caps, value
-    /// below in big monospaced digits. Value at 42pt (dim 44) —
-    /// 45pt clipped the top-left "T" of TIME against the Ultra's
-    /// rounded corner; 42 + 10pt horizontal padding clears it.
+    /// below in big monospaced digits. Value at 38pt (dim 40) —
+    /// the size that keeps three rows comfortably inside the
+    /// rounded corner curve while still reading at arm's length.
     /// minimumScaleFactor 0.5 absorbs rare wide values like
     /// "1:23:45" without breaking the grid.
     private func cell(_ label: String, value: String, tint: Color) -> some View {
@@ -95,7 +94,7 @@ private struct MetricsPage: View {
                 .tracking(0.6)
                 .foregroundStyle(isDimmed ? .white.opacity(0.55) : .secondary)
             Text(value)
-                .font(.system(size: isDimmed ? 44 : 42, weight: .bold))
+                .font(.system(size: isDimmed ? 40 : 38, weight: .bold))
                 .monospacedDigit()
                 .minimumScaleFactor(0.5)
                 .lineLimit(1)
