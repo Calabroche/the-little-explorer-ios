@@ -28,6 +28,9 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
     /// Weak ref so the session manager doesn't keep the store alive
     /// past the app's lifetime; the store is owned by the app.
     private weak var pendingStore: PendingRideStore?
+    /// Watch-side itinerary cache. Updated whenever the iPhone pushes
+    /// a new application context — see `session(_:didReceiveApplicationContext:)`.
+    private weak var itineraryCache: ItineraryCache?
 
     override init() {
         self.session = WCSession.isSupported() ? WCSession.default : nil
@@ -40,15 +43,41 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
     /// Late-binding wire-up from LittleExplorerWatchApp — we need the
     /// store reference so we can a) enumerate pending rides on
     /// startup to push the queue, and b) delete each file after a
-    /// successful transfer.
-    func attach(pendingStore: PendingRideStore) {
+    /// successful transfer. Also wires the itinerary cache so we can
+    /// update it when the iPhone pushes a new application context.
+    func attach(pendingStore: PendingRideStore, itineraryCache: ItineraryCache) {
         self.pendingStore = pendingStore
+        self.itineraryCache = itineraryCache
+        // If we already have an application context from a previous
+        // session (i.e. the iPhone pushed before this Watch run), drain
+        // it now so the picker has fresh data the moment the view
+        // mounts. WCSession holds the latest context across launches.
+        if let session, !session.receivedApplicationContext.isEmpty {
+            ingestApplicationContext(session.receivedApplicationContext)
+        }
         // Catch-up: on launch, attempt to push every ride still on disk.
         // WCSession.transferFile is idempotent on the iPhone receive
         // side (we dedupe by id) so a re-send after a missed handshake
         // is safe.
         Task { @MainActor in
             self.flushPendingQueue()
+        }
+    }
+
+    /// Decode the iPhone's pushed itinerary library and hand it to
+    /// the local cache. Shared between the live `didReceiveApplicationContext`
+    /// callback and the on-launch drain of the previously-stored context.
+    private func ingestApplicationContext(_ context: [String: Any]) {
+        guard let kind = context["kind"] as? String, kind == "itineraries",
+              let data = context["data"] as? Data else { return }
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        guard let decoded = try? decoder.decode([Itinerary].self, from: data) else {
+            logger.warning("ingestApplicationContext: decode failed (\(data.count) bytes)")
+            return
+        }
+        Task { @MainActor in
+            self.itineraryCache?.set(decoded)
         }
     }
 
@@ -114,6 +143,14 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
 
     func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
         Task { @MainActor in self.lastIncomingMessage = message }
+    }
+
+    /// Called when the iPhone updates its application context (Phase B
+    /// itinerary push). The OS delivers the *latest* value only, with
+    /// intermediate updates dropped — exactly the right semantics for
+    /// a library snapshot.
+    func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
+        ingestApplicationContext(applicationContext)
     }
 
     /// Called by the OS when a queued transfer finishes (or fails).
