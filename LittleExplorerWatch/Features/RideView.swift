@@ -92,19 +92,19 @@ private struct MetricsPage: View {
     }
 
     /// Single metric cell — label on top in tiny caps, value
-    /// below in big monospaced digits. Value at 38pt (dim 40) —
-    /// the size that keeps three rows comfortably inside the
-    /// rounded corner curve while still reading at arm's length.
-    /// minimumScaleFactor 0.5 absorbs rare wide values like
-    /// "1:23:45" without breaking the grid.
+    /// below in big monospaced digits. Value at 40pt (dim 42),
+    /// label at 13pt — the size the rider asked for after the
+    /// 38pt / 11pt baseline felt too modest. minimumScaleFactor
+    /// 0.5 absorbs rare wide values like "1:23:45" without
+    /// breaking the grid.
     private func cell(_ label: String, value: String, tint: Color) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label)
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: 13, weight: .semibold))
                 .tracking(0.6)
                 .foregroundStyle(isDimmed ? .white.opacity(0.55) : .secondary)
             Text(value)
-                .font(.system(size: isDimmed ? 40 : 38, weight: .bold))
+                .font(.system(size: isDimmed ? 42 : 40, weight: .bold))
                 .monospacedDigit()
                 .minimumScaleFactor(0.5)
                 .lineLimit(1)
