@@ -129,6 +129,16 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
         }
     }
 
+    /// Same dispatch as the other receive entry-points, but for
+    /// the Watch's `updateApplicationContext` channel. This is
+    /// the path we use for in-ride live updates so the lock
+    /// screen sees fresh numbers even after a reachability gap.
+    func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
+        Task { @MainActor in
+            await self.handleRideLifecycle(applicationContext)
+        }
+    }
+
     /// Dispatch a "kind"-tagged WC payload from the Watch onto the
     /// iPhone's Live Activity manager. Tolerates missing fields —
     /// we want the activity to surface even with partial state.

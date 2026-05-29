@@ -52,8 +52,15 @@ final class RideActivityManager {
     }
 
     func end() async {
-        guard let activity = current else { return }
-        await activity.end(nil, dismissalPolicy: .immediate)
+        // Defensive: end ALL active activities, not just the one we
+        // tracked locally. ActivityKit can hold an activity our
+        // `current` ref lost (e.g. iPhone restarted mid-ride, or
+        // WCSession races) — without this loop, those orphans stay
+        // pinned to the lock screen for hours. Same pattern as
+        // endStaleActivities at app launch.
+        for activity in Activity<RideActivityAttributes>.activities {
+            await activity.end(nil, dismissalPolicy: .immediate)
+        }
         current = nil
     }
 }

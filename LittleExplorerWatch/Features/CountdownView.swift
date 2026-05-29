@@ -1,7 +1,7 @@
 import SwiftUI
 import WatchKit
 
-/// Big 3-2-1 countdown shown right before a ride actually starts.
+/// Big 5-4-3-2-1 countdown shown right before a ride actually starts.
 ///
 /// Why: tapping Start should feel deliberate, and the rider needs a
 /// moment to slip the watch back onto the wrist, grab the bars, and
@@ -20,7 +20,7 @@ import WatchKit
 struct CountdownView: View {
     let onComplete: () async -> Void
 
-    @State private var count: Int = 3
+    @State private var count: Int = 5
 
     var body: some View {
         ZStack {
@@ -33,10 +33,10 @@ struct CountdownView: View {
                 .transition(.scale.combined(with: .opacity))
         }
         .task {
-            // Single 3-tick loop. We start at 3 (already shown), so
+            // Single 5-tick loop. We start at 5 (already shown), so
             // sleep first, THEN decrement — this way the rider sees
             // each number for a full second.
-            for next in stride(from: 2, through: 0, by: -1) {
+            for next in stride(from: 4, through: 0, by: -1) {
                 WKInterfaceDevice.current().play(.start)
                 try? await Task.sleep(nanoseconds: 1_000_000_000)
                 if next == 0 { break }

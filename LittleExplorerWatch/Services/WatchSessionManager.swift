@@ -122,9 +122,19 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
         session?.transferUserInfo(msg)
     }
 
-    /// Periodic in-ride snapshot (~3 s cadence). Fire-and-forget;
-    /// we don't queue durable retries because a dropped update is
-    /// fine — the next one will land and the activity catches up.
+    /// Periodic in-ride snapshot (~3 s cadence). Fires through THREE
+    /// channels for resilience:
+    ///   1. sendMessage — low-latency push when iPhone is reachable
+    ///   2. updateApplicationContext — latest-state cache so an
+    ///      iPhone that wakes mid-ride still gets fresh numbers
+    ///      instead of the initial zeroes (this is the "lock screen
+    ///      stuck at 0" symptom we're fixing)
+    ///   3. transferUserInfo (start/end only) — guaranteed delivery
+    ///      for lifecycle events that absolutely must land
+    ///
+    /// For updates, sendMessage + applicationContext is enough:
+    /// the latter ensures the *latest* snapshot wins on the iPhone
+    /// side regardless of reachability state.
     func sendRideUpdate(
         distanceKm: Double,
         durationSec: Double,
@@ -145,12 +155,23 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
         if let userLat { msg["userLat"] = userLat }
         if let userLng { msg["userLng"] = userLng }
         send(msg)
+        // applicationContext dedupes against the previous value
+        // so spamming this every 3 s is cheap — only the *latest*
+        // dict is actually transmitted to the iPhone when it
+        // becomes reachable. Perfect "freshest snapshot wins"
+        // semantics for a Live Activity.
+        try? session?.updateApplicationContext(msg)
     }
 
     /// Workout finished — dismiss the iPhone's Live Activity.
+    /// Wide fan-out (4 channels) so the activity never gets stuck
+    /// on the lock screen: sendMessage if reachable, persisted
+    /// applicationContext as the new "latest", AND transferUserInfo
+    /// as a durable receipt the OS guarantees to deliver.
     func sendRideEnded() {
         let msg: [String: Any] = ["kind": "rideEnded"]
         send(msg)
+        try? session?.updateApplicationContext(msg)
         session?.transferUserInfo(msg)
     }
 

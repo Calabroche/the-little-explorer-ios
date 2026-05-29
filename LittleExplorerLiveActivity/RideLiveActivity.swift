@@ -24,13 +24,27 @@ struct RideLiveActivity: Widget {
                 DynamicIslandExpandedRegion(.bottom) {
                     HStack {
                         VStack(alignment: .leading) {
-                            Text("SPEED").font(.caption2).foregroundStyle(.secondary)
-                            Text(formatSpeed(context.state.speedKmh)).font(.title3.weight(.bold)).monospacedDigit()
+                            Text("VITESSE").font(.caption2).foregroundStyle(.secondary)
+                            Text(formatSpeed(context.state.speedKmh))
+                                .font(.title3.weight(.bold))
+                                .monospacedDigit()
+                                .foregroundStyle(.green)
+                        }
+                        Spacer()
+                        VStack {
+                            Text("FC").font(.caption2).foregroundStyle(.secondary)
+                            Text(context.state.heartRate.map { "\($0)" } ?? "—")
+                                .font(.title3.weight(.bold))
+                                .monospacedDigit()
+                                .foregroundStyle(.red)
                         }
                         Spacer()
                         VStack(alignment: .trailing) {
-                            Text("ELEV").font(.caption2).foregroundStyle(.secondary)
-                            Text("\(Int(context.state.elevationGainM)) m").font(.title3.weight(.bold)).monospacedDigit()
+                            Text("D+").font(.caption2).foregroundStyle(.secondary)
+                            Text("\(Int(context.state.elevationGainM)) m")
+                                .font(.title3.weight(.bold))
+                                .monospacedDigit()
+                                .foregroundStyle(.orange)
                         }
                     }
                     .padding(.top, 4)
@@ -94,41 +108,46 @@ private struct LockScreenView: View {
 
                 Divider().background(.white.opacity(0.25))
 
-                // 2×2 grid of metrics + duration. Spacing tuned so the
-                // last row floats off the rounded bottom edge.
-                VStack(spacing: 8) {
+                // 3×2 grid: KM / VITESSE, MOY / HR (red), D+ / TEMPS.
+                // HR added per user request — wasn't on the first
+                // version of the lock screen. Tint coding matches the
+                // watch UI (green speed, red HR, orange climb).
+                VStack(spacing: 6) {
                     HStack(spacing: 8) {
-                        compactMetric("KM",       formatDistance(state.distanceKm))
-                        compactMetric("VITESSE",  formatSpeed(state.speedKmh))
+                        compactMetric("KM",      formatDistance(state.distanceKm), tint: .white)
+                        compactMetric("VITESSE", formatSpeed(state.speedKmh),      tint: .green)
                     }
                     HStack(spacing: 8) {
-                        compactMetric("MOY",      formatSpeed(durationSec: state.durationSec, distKm: state.distanceKm))
-                        compactMetric("D+",       "\(Int(state.elevationGainM))m")
+                        compactMetric("MOY",     formatSpeed(durationSec: state.durationSec, distKm: state.distanceKm), tint: .white.opacity(0.85))
+                        compactMetric("FC",      state.heartRate.map { "\($0)" } ?? "—",      tint: .red)
+                    }
+                    HStack(spacing: 8) {
+                        compactMetric("D+",      "\(Int(state.elevationGainM))m", tint: .orange)
+                        compactMetric("TEMPS",   formatDuration(state.durationSec), tint: .white)
                     }
                 }
 
-                HStack(spacing: 5) {
-                    Image(systemName: "clock").font(.system(size: 11)).foregroundStyle(.white.opacity(0.6))
-                    Text(formatDuration(state.durationSec))
-                        .font(.system(size: 15).weight(.heavy))
-                        .monospacedDigit()
-                        .foregroundStyle(.white)
-                    Spacer()
+                // HR zone strip — same idea as the watch's HRZonesBar
+                // but trimmed for the narrower lock-screen column.
+                // Hidden when no HR is available (avoids a row of
+                // dim grey chips that adds no info).
+                if let bpm = state.heartRate, bpm > 0 {
+                    LockScreenHRZones(bpm: bpm)
+                        .padding(.top, 2)
                 }
-                .padding(.bottom, 6)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .padding(10)
     }
 
-    private func compactMetric(_ label: String, _ value: String) -> some View {
+    private func compactMetric(_ label: String, _ value: String, tint: Color = .white) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label).font(.system(size: 10).weight(.bold)).foregroundStyle(.white.opacity(0.55))
             Text(value)
                 .font(.system(size: 18).weight(.heavy))
                 .monospacedDigit()
-                .foregroundStyle(.white)
+                .foregroundStyle(tint)
                 .lineLimit(1).minimumScaleFactor(0.65)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -223,4 +242,73 @@ private func formatSpeed(durationSec: Double, distKm: Double) -> String {
 
 private func formatMeters(_ meters: Double) -> String {
     meters >= 1000 ? String(format: "%.1f km", meters / 1000) : "\(Int(meters)) m"
+}
+
+// MARK: - HR zones strip (lock-screen-sized)
+//
+// Mini version of the watch's HRZonesBar — 5 cells, one active.
+// Tuned for the narrow lock-screen column: shorter chips, smaller
+// pill, no triangle (saves vertical space). Same color palette so
+// glance recognition transfers from watch to phone.
+
+/// Compute the zone index 0..4 from a BPM value, assuming a generic
+/// max-HR of 195 (good-enough for a fit rider in their 30s; later
+/// versions can read the actual value from HealthKit if needed).
+private func zoneIndex(forBPM bpm: Int, hrMax: Int = 195) -> Int {
+    let pct = Double(bpm) / Double(hrMax)
+    switch pct {
+    case ..<0.6:  return 0
+    case ..<0.7:  return 1
+    case ..<0.8:  return 2
+    case ..<0.9:  return 3
+    default:      return 4
+    }
+}
+
+private let zoneColors: [Color] = [
+    Color(red: 0.13, green: 0.42, blue: 0.66),    // Z1 deep blue
+    Color(red: 0.16, green: 0.66, blue: 0.66),    // Z2 teal
+    Color(red: 0.66, green: 0.92, blue: 0.18),    // Z3 bright lime
+    Color(red: 0.95, green: 0.59, blue: 0.15),    // Z4 amber
+    Color(red: 0.84, green: 0.20, blue: 0.20),    // Z5 red
+]
+
+private struct LockScreenHRZones: View {
+    let bpm: Int
+    var hrMax: Int = 195
+
+    private var current: Int { zoneIndex(forBPM: bpm, hrMax: hrMax) }
+    private func textColor(for index: Int) -> Color {
+        // Same luminance-aware rule as the watch: black on bright
+        // Z3/Z4, white on darker Z1/Z2/Z5.
+        (index == 2 || index == 3) ? .black : .white
+    }
+
+    var body: some View {
+        HStack(spacing: 3) {
+            ForEach(0..<5, id: \.self) { i in
+                if i == current {
+                    HStack(spacing: 3) {
+                        Image(systemName: "heart.fill")
+                            .font(.system(size: 9, weight: .bold))
+                        Text("Z\(i + 1)")
+                            .font(.system(size: 10, weight: .heavy))
+                            .fixedSize(horizontal: true, vertical: false)
+                    }
+                    .foregroundStyle(textColor(for: i))
+                    .padding(.horizontal, 6)
+                    .frame(minWidth: 42, maxWidth: .infinity)
+                    .frame(height: 18)
+                    .background(zoneColors[i], in: RoundedRectangle(cornerRadius: 9))
+                    .layoutPriority(10)
+                } else {
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(zoneColors[i])
+                        .frame(width: 12, height: 14)
+                        .layoutPriority(1)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
 }
