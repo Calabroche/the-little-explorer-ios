@@ -2,9 +2,13 @@ import SwiftUI
 
 /// In-progress ride screen.
 ///
-/// Layout: scrollable single page (Digital Crown native) with the four
-/// live metrics on top + Pause + End buttons always visible at the
-/// bottom.
+/// Two modes:
+///   • Freeform ride (`activeItinerary == nil`): scrollable single page
+///     with the four live metrics on top + Pause + End buttons always
+///     visible at the bottom. Digital Crown native.
+///   • Itinerary ride: vertical TabView with two pages — metrics page
+///     on top, map view on bottom showing the planned route + current
+///     location. Swipe down (or Crown) to flip between them.
 ///
 /// Always-On Display: on Series 5+, the screen stays dimly lit when
 /// the user lowers the wrist mid-workout. We detect this via
@@ -13,6 +17,31 @@ import SwiftUI
 /// battery. WatchKit blanks SwiftUI animations automatically in this
 /// mode — no extra work needed for that.
 struct RideView: View {
+    @Environment(WorkoutManager.self) private var workoutManager
+    @Environment(WatchSessionManager.self) private var session
+
+    var body: some View {
+        if let itinerary = workoutManager.activeItinerary {
+            // Two-page TabView — vertical page style maps to the
+            // Digital Crown's natural up/down.
+            TabView {
+                MetricsPage()
+                ItineraryMapView(
+                    itinerary: itinerary,
+                    currentCoordinate: workoutManager.latestCoordinate,
+                )
+                .tabItem { Label("Carte", systemImage: "map.fill") }
+            }
+            .tabViewStyle(.verticalPage)
+        } else {
+            MetricsPage()
+        }
+    }
+}
+
+/// Live metrics + Pause/End controls. Same layout in freeform and
+/// itinerary rides; only the surrounding navigation differs.
+private struct MetricsPage: View {
     @Environment(WorkoutManager.self) private var workoutManager
     @Environment(WatchSessionManager.self) private var session
     /// True when the Watch is in Always-On (dim) mode. Drives the

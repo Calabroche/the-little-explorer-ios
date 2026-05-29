@@ -71,6 +71,16 @@ final class WorkoutManager: NSObject {
     /// freeform ride.
     private var activeItineraryId: String?
 
+    /// Full itinerary the rider is following — keeps the geometry +
+    /// metadata around so the Watch map view can render the planned
+    /// route without re-fetching from the cache. Set by start(itinerary:).
+    private(set) var activeItinerary: Itinerary?
+
+    /// Most recent accepted GPS fix, exposed as a SwiftUI-friendly
+    /// CLLocationCoordinate2D. Drives the map's "you are here" marker
+    /// during a ride. nil before the first fix arrives.
+    private(set) var latestCoordinate: CLLocationCoordinate2D?
+
     init(store: PendingRideStore, session: WatchSessionManager? = nil) {
         self.store = store
         self.sessionManager = session
@@ -93,9 +103,12 @@ final class WorkoutManager: NSObject {
     /// Convenience overload that records the itinerary the user picked
     /// — its id is plumbed into the resulting PendingRide so the iPhone
     /// (and Strava sync-back) can correlate the ride to the planned
-    /// route. Behavior is otherwise identical to `start()`.
+    /// route, and the full itinerary (incl. geometry) is kept so the
+    /// Watch map view can render the planned path. Behavior is
+    /// otherwise identical to `start()`.
     func start(itinerary: Itinerary) async {
         activeItineraryId = itinerary.id
+        activeItinerary = itinerary
         await start()
     }
 
@@ -207,6 +220,8 @@ final class WorkoutManager: NSObject {
         self.startedAt = nil
         elapsed = 0
         activeItineraryId = nil
+        activeItinerary = nil
+        latestCoordinate = nil
         bufferedFixes.removeAll()
         bufferedHRSamples.removeAll()
     }
@@ -525,6 +540,10 @@ extension WorkoutManager: CLLocationManagerDelegate {
             // CLLocation.speed is m/s; mask to >= 0 (the API returns
             // a negative value when speed is unknown).
             speedKmh = max(0, fix.speed) * 3.6
+            // Surface the freshest fix to the UI so the map can
+            // re-center on the rider without us holding a full
+            // CLLocationManager from inside the view.
+            latestCoordinate = fix.coordinate
         }
     }
 }

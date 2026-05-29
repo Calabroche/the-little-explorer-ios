@@ -172,6 +172,7 @@ targets:
       - sdk: WatchKit.framework
       - sdk: WatchConnectivity.framework
       - sdk: CoreLocation.framework
+      - sdk: MapKit.framework
       - target: LittleExplorerWatchWidgets
     settings:
       base:
