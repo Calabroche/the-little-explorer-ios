@@ -43,11 +43,15 @@ private struct MetricsPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Grid sits at the top edge — values are now LARGER
-            // (32pt → 34pt) so the rider reads them at arm's length
-            // without squinting. Inter-row spacing kept tight (4pt)
-            // to fit three rows + the HR bar inside one watch screen.
-            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 4) {
+            // Grid takes its intrinsic height. Earlier iterations
+            // sat tight at the top with a big Spacer pushing the
+            // HR bar to the bottom — felt wasteful. Now the rows
+            // breathe (verticalSpacing 14) and the value font is
+            // bumped to 40pt so each metric reads from arm's
+            // length. Vertical budget on Watch Ultra (~205pt usable):
+            // 3 rows × ~56pt + 2 × 14pt gaps + 40pt HR bar ≈ 196pt,
+            // fits with a small Spacer cushion.
+            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 14) {
                 GridRow {
                     cell("TIME",  value: formatDuration(workoutManager.elapsed),     tint: .white)
                     cell("DIST",  value: formatDistance(workoutManager.distanceMeters), tint: .white)
@@ -79,22 +83,22 @@ private struct MetricsPage: View {
         }
     }
 
-    /// Single metric cell — label on top in tiny caps, value below in
-    /// big monospaced digits. Tint color helps glance-parsing.
-    /// Bumped to 34pt (dim 36) so TIME / AVG / SPEED read at arm's
-    /// length while the rider's hands stay on the bars. The HR zone
-    /// strip sits flush at the bottom, so the value font has room
-    /// to grow without spilling off the watch screen.
+    /// Single metric cell — label on top in tiny caps, value below
+    /// in big monospaced digits. Tint color helps glance-parsing.
+    /// Value font pushed to 40pt (dim 42) — biggest the layout
+    /// allows before the third row crashes into the HR bar.
+    /// Label bumped to 11pt and given a 2pt gap to the value so
+    /// the hierarchy reads cleanly at a glance.
     private func cell(_ label: String, value: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: 2) {
             Text(label)
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: 11, weight: .semibold))
                 .tracking(0.6)
                 .foregroundStyle(isDimmed ? .white.opacity(0.55) : .secondary)
             Text(value)
-                .font(.system(size: isDimmed ? 36 : 34, weight: .bold))
+                .font(.system(size: isDimmed ? 42 : 40, weight: .bold))
                 .monospacedDigit()
-                .minimumScaleFactor(0.55)
+                .minimumScaleFactor(0.5)
                 .lineLimit(1)
                 .foregroundStyle(isDimmed ? .white : tint)
         }
