@@ -36,6 +36,9 @@ final class WorkoutManager: NSObject {
     // ── Dependencies ───────────────────────────────────────────────
     private let healthStore = HKHealthStore()
     private let store: PendingRideStore
+    /// Crash-recovery scratch file. Persisted every ~30 s while a
+    /// ride is active so a Watch reboot doesn't lose the data.
+    private let inProgress = InProgressRideStore()
     private weak var sessionManager: WatchSessionManager?
     private let logger = Logger(subsystem: "com.calabrese.little-explorer-ios.watchkitapp", category: "WorkoutManager")
 
@@ -55,9 +58,20 @@ final class WorkoutManager: NSObject {
     private var bufferedFixes: [CLLocation] = []
     private var bufferedHRSamples: [(t: Date, value: Double)] = []
 
+    /// Set on launch if the previous run crashed mid-ride and left an
+    /// orphan snapshot on disk. UI checks this and prompts the user
+    /// to either resume (recover whatever was buffered) or finalize
+    /// (drop the snapshot, save what we have as a complete pending
+    /// ride). Cleared by either action.
+    private(set) var pendingRecovery: InProgressSnapshot?
+
     init(store: PendingRideStore, session: WatchSessionManager? = nil) {
         self.store = store
         self.sessionManager = session
+        // Check for a crash-leftover from the previous launch — we
+        // surface it to the UI without auto-resuming, so the user
+        // explicitly chooses what to do with stale data.
+        self.pendingRecovery = inProgress.loadIfFresh()
         super.init()
         locationManager.delegate = self
         // Best-accuracy GPS — workout sessions get fewer power-budget
@@ -165,6 +179,10 @@ final class WorkoutManager: NSObject {
             logger.warning("end() called with no startedAt — nothing to save")
         }
 
+        // Clear the crash-recovery snapshot — ride ended cleanly, no
+        // need to surface a "Recover?" prompt at next launch.
+        inProgress.clear()
+
         // Reset state so the StartView is ready for another ride.
         // Done unconditionally so the user is always returned to home.
         isActive = false
@@ -229,13 +247,85 @@ final class WorkoutManager: NSObject {
     private func startClock() {
         clockTask?.cancel()
         clockTask = Task { [weak self] in
+            var ticksSinceSnapshot = 0
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
                 guard let self else { return }
                 guard self.isActive, !self.isPaused, let start = self.startedAt else { continue }
                 self.elapsed = Date.now.timeIntervalSince(start)
+                // Crash-recovery snapshot every 30 ticks (~30 s).
+                // Cheap (a few KB written atomically) and bounded by
+                // the ride length. Means a Watch reboot at most loses
+                // 30 s of trace data.
+                ticksSinceSnapshot += 1
+                if ticksSinceSnapshot >= 30 {
+                    self.persistSnapshot()
+                    ticksSinceSnapshot = 0
+                }
             }
         }
+    }
+
+    /// Convert the current in-memory buffer into an InProgressSnapshot
+    /// and hand it to the recovery store. Called automatically every
+    /// ~30 s by the clock loop.
+    private func persistSnapshot() {
+        guard let startedAt else { return }
+        let fixes = bufferedFixes.map {
+            InProgressSnapshot.Fix(lat: $0.coordinate.latitude, lng: $0.coordinate.longitude, alt: $0.altitude, t: $0.timestamp)
+        }
+        let hrSamples = bufferedHRSamples.map { InProgressSnapshot.HRSample(t: $0.t, value: $0.value) }
+        let snapshot = InProgressSnapshot(
+            startedAt:  startedAt,
+            lastUpdate: .now,
+            elapsed:    elapsed,
+            distanceM:  distanceMeters,
+            fixes:      fixes,
+            hrSamples:  hrSamples,
+        )
+        inProgress.save(snapshot)
+    }
+
+    /// Recovery action: take the orphan snapshot from a previous
+    /// crashed run and turn it into a regular PendingRide (one that
+    /// shows up in the "N en attente" pill and gets shipped to the
+    /// iPhone on next WCSession activation). Use this when the user
+    /// taps "Recover" on the launch dialog — we don't auto-resume
+    /// recording because the user is no longer mid-ride, but we don't
+    /// want to lose the buffered data either.
+    func finalizeRecovery() {
+        guard let snap = pendingRecovery else { return }
+        // Synthesize a PendingRide from the snapshot. Same shape as
+        // buildPendingRide() but reading from the on-disk snap.
+        let id = -Int64(snap.startedAt.timeIntervalSince1970 * 1000)
+        let coords = snap.fixes.map { Coordinate(lat: $0.lat, lng: $0.lng) }
+        let times  = snap.fixes.map { $0.t.timeIntervalSince(snap.startedAt) }
+        let alts   = snap.fixes.map { $0.alt }
+        let hr     = snap.hrSamples.map { $0.value }
+        let ride = PendingRide(
+            id: id,
+            date: ISO8601DateFormatter().string(from: snap.startedAt),
+            durationSeconds: snap.elapsed,
+            gps: coords,
+            timeS: times,
+            altitude: alts,
+            heartrate: hr,
+            distanceM: snap.distanceM,
+            sport: "cycling",
+        )
+        let url = store.save(ride)
+        logger.notice("Recovered orphan ride \(id, privacy: .public): \(coords.count) GPS points, \(snap.distanceM, format: .fixed(precision: 0), privacy: .public) m")
+        if let url {
+            sessionManager?.transferRide(at: url, rideId: ride.id)
+        }
+        discardRecovery()
+    }
+
+    /// Drop the recovery snapshot without saving it (user tapped
+    /// "Discard" on the launch dialog).
+    func discardRecovery() {
+        inProgress.clear()
+        pendingRecovery = nil
     }
 
     // ── Build a PendingRide from the buffer ───────────────────────

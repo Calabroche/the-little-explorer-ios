@@ -43,12 +43,55 @@ private struct StartView: View {
                     LocationDeniedHint()
                 }
 
+                if let snap = workoutManager.pendingRecovery {
+                    RecoveryCard(snapshot: snap)
+                }
+
                 if !pending.pending.isEmpty {
                     PendingPill(count: pending.pending.count)
                 }
             }
             .padding()
         }
+    }
+}
+
+/// Surfaced when the previous launch crashed mid-ride and left an
+/// in-progress snapshot on disk. Two actions:
+///   • Récupérer — turn the orphan into a complete PendingRide
+///     (shipped to iPhone like any other ended ride).
+///   • Ignorer — drop it. User decides the data isn't worth saving.
+private struct RecoveryCard: View {
+    @Environment(WorkoutManager.self) private var workoutManager
+    let snapshot: InProgressSnapshot
+
+    private var distanceKm: Double { snapshot.distanceM / 1000 }
+    private var minutes: Int { Int(snapshot.elapsed / 60) }
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Text("Sortie interrompue")
+                .font(.caption.bold())
+                .foregroundStyle(.orange)
+            Text("\(minutes) min · \(distanceKm, format: .number.precision(.fractionLength(2))) km")
+                .font(.system(size: 11)).foregroundStyle(.secondary)
+            HStack(spacing: 6) {
+                Button("Récupérer") {
+                    workoutManager.finalizeRecovery()
+                }
+                .buttonStyle(.bordered)
+                .tint(.green)
+                Button("Ignorer") {
+                    workoutManager.discardRecovery()
+                }
+                .buttonStyle(.bordered)
+                .tint(.gray)
+            }
+            .font(.caption2)
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 6)
+        .background(Color.orange.opacity(0.15), in: RoundedRectangle(cornerRadius: 8))
     }
 }
 

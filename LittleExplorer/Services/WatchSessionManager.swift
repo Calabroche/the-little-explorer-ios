@@ -27,6 +27,10 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
     /// ride store have been instantiated. Weak so we don't form a
     /// retain cycle through the app's environment graph.
     private weak var localStore: LocalRideStore?
+    /// API client used to fire the Strava upload on a successful
+    /// ingestion. Optional because it's wired in `attach(...)` after
+    /// the env is fully built — it stays unset until then.
+    private var api: APIClient?
     /// Callback the env wires to `activityStore.refreshLocal(user:)`
     /// so the feed re-reads from the store after a Watch ride lands.
     private var onRideIngested: (@MainActor (Int) -> Void)?
@@ -41,8 +45,9 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
 
     /// Wire the ingestion targets after env construction. Idempotent
     /// — calling it twice just replaces the references.
-    func attach(localStore: LocalRideStore, onRideIngested: @MainActor @escaping (Int) -> Void) {
+    func attach(localStore: LocalRideStore, api: APIClient, onRideIngested: @MainActor @escaping (Int) -> Void) {
         self.localStore = localStore
+        self.api = api
         self.onRideIngested = onRideIngested
     }
 
@@ -122,6 +127,29 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
         // and the feed picks up the new ride without the user pulling
         // to refresh.
         onRideIngested?(record.id)
+
+        // Phase 3: fire-and-forget Strava upload so the ride lands in
+        // the user's Strava account (and from there into our backend's
+        // `activities` table via the existing webhook → sync-one
+        // pipeline). The local copy stays in the feed regardless;
+        // Phase 4 will deduplicate once the Strava-side activity
+        // surfaces with its own positive id.
+        if let api {
+            Task.detached(priority: .background) { [record] in
+                do {
+                    let result = try await api.uploadToStrava(record: record)
+                    await MainActor.run {
+                        Log.watch.notice("Strava upload kicked off — uploadId=\(result.uploadId ?? -1, privacy: .public), status=\(result.status ?? "?", privacy: .public)")
+                    }
+                } catch {
+                    await MainActor.run {
+                        Log.watch.error("Strava upload failed for ride \(record.id): \(error.localizedDescription, privacy: .public)")
+                    }
+                }
+            }
+        } else {
+            Log.watch.notice("Strava upload skipped — APIClient not wired yet")
+        }
     }
 
     #if os(iOS)

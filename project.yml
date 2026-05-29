@@ -172,11 +172,41 @@ targets:
       - sdk: WatchKit.framework
       - sdk: WatchConnectivity.framework
       - sdk: CoreLocation.framework
+      - target: LittleExplorerWatchWidgets
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.calabrese.little-explorer-ios.watchkitapp
         TARGETED_DEVICE_FAMILY: "4"
         CODE_SIGN_ENTITLEMENTS: LittleExplorerWatch/Entitlements/LittleExplorerWatch.entitlements
+        SUPPORTED_PLATFORMS: "watchos watchsimulator"
+
+  # ─── watchOS Widget Extension (complications on the Watch face) ─────────────
+  # Lets the user add a "Little Explorer" tile to any watch face that
+  # supports accessory widgets — tap once to launch the app instead of
+  # swiping to the app grid. WidgetKit-based; no separate provisioning
+  # profile needed beyond what the parent Watch app already has.
+  LittleExplorerWatchWidgets:
+    type: app-extension
+    platform: watchOS
+    deploymentTarget: "10.0"
+    sources:
+      - path: LittleExplorerWatchWidgets
+    info:
+      path: LittleExplorerWatchWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: Little Explorer Widgets
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    dependencies:
+      - sdk: WidgetKit.framework
+      - sdk: SwiftUI.framework
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.calabrese.little-explorer-ios.watchkitapp.widgets
+        SKIP_INSTALL: YES
+        TARGETED_DEVICE_FAMILY: "4"
         SUPPORTED_PLATFORMS: "watchos watchsimulator"
 
 schemes:

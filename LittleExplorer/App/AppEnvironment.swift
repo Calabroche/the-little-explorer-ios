@@ -40,11 +40,14 @@ final class AppEnvironment {
         self.activityStore = activityStore
         self.session = SessionStore()
 
-        // Phase 2 wiring: when a ride file arrives from the Apple
+        // Phase 2 + 3 wiring: when a ride file arrives from the Apple
         // Watch, the WatchSessionManager decodes it, hands it to the
-        // LocalRideStore, and asks the ActivityStore to re-publish so
-        // the feed picks it up without a manual refresh.
-        watch.attach(localStore: localRides) { [weak self] _ in
+        // LocalRideStore, asks the ActivityStore to re-publish so the
+        // feed picks it up without a manual refresh, AND fires the
+        // Strava upload via the same APIClient the rest of the app
+        // uses (so the ride eventually shows up in Strava + syncs
+        // back as a "real" activity).
+        watch.attach(localStore: localRides, api: api) { [weak self] _ in
             guard let self else { return }
             self.activityStore.refreshLocal(user: self.currentUser)
         }
