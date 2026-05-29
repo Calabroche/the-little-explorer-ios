@@ -42,6 +42,15 @@ private struct MetricsPage: View {
     @Environment(\.isLuminanceReduced) private var isDimmed
 
     var body: some View {
+        // Force full screen width on the root container so the
+        // Grid's column geometry stays anchored regardless of
+        // what's happening below. Without this, when the HR pill
+        // toggles between inactive (narrow chip row) and active
+        // (wide pill ⇒ HStack expands to .infinity), the VStack
+        // re-derives its intrinsic width from its children and
+        // the Grid columns shift left. Pinning the VStack to the
+        // screen width breaks that coupling — the metrics row
+        // doesn't budge when the HR zone updates.
         VStack(spacing: 0) {
             // Grid takes its intrinsic height. Value font 38pt —
             // smaller than 42 so the top row clears the Ultra's
@@ -74,11 +83,12 @@ private struct MetricsPage: View {
             // mirrors the grid above so columns align.
             if !isDimmed {
                 HRZonesBar(bpm: workoutManager.heartRate)
-                    .frame(minHeight: 48)
+                    .frame(maxWidth: .infinity, minHeight: 48)
                     .padding(.horizontal, 14)
                     .padding(.bottom, 2)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
     /// Single metric cell — label on top in tiny caps, value

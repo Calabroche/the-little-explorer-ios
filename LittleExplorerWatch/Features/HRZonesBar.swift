@@ -60,17 +60,25 @@ struct HRZonesBar: View {
     }
 
     var body: some View {
+        // Both HStacks pinned to full width via .frame(maxWidth:
+        // .infinity). Critical: without this, when no zone is
+        // active the chip row collapses to its intrinsic width
+        // (5 × 20pt + 4 × spacing ≈ 116pt) and the parent VStack
+        // shrinks with it. That shrinkage propagates up to the
+        // MetricsPage VStack, which re-derives the Grid's column
+        // widths and shifts the rider's TIME / SPEED / HR labels
+        // leftward when a zone first appears.
         VStack(spacing: 2) {
             HStack(spacing: 4) {
                 ForEach(0..<5, id: \.self) { i in
                     cell(for: i)
                 }
             }
+            .frame(maxWidth: .infinity)
             // Triangle row — same HStack layout so the indicator
             // lands directly under the active cell's column. Empty
             // placeholders maintain horizontal alignment on the
-            // other columns. Widths match the cell row's geometry
-            // (active flex, inactive 22 pt).
+            // other columns.
             HStack(spacing: 4) {
                 ForEach(0..<5, id: \.self) { i in
                     if i == currentZone {
@@ -86,7 +94,9 @@ struct HRZonesBar: View {
                     }
                 }
             }
+            .frame(maxWidth: .infinity)
         }
+        .frame(maxWidth: .infinity)
     }
 
     @ViewBuilder
