@@ -33,16 +33,20 @@ struct RideView: View {
     }
 }
 
-/// Full-screen dense metric grid. No buttons share this view —
-/// the page is reserved for data so the rider can read everything at
-/// a glance without scrolling, without context-switching.
+/// Full-screen dense metric grid. No buttons share this view, no
+/// scroll — everything the rider needs fits on one screen. Layout:
+/// 3 rows × 2 cols of metrics + a thin 5-zone HR bar pinned at the
+/// bottom (Apple Workout-style).
 private struct MetricsPage: View {
     @Environment(WorkoutManager.self) private var workoutManager
     @Environment(\.isLuminanceReduced) private var isDimmed
 
     var body: some View {
         VStack(spacing: 0) {
-            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: isDimmed ? 12 : 10) {
+            // Grid takes all the vertical space it can grab, then the
+            // HR bar pins to the bottom. Spacing tightened from 10pt
+            // down to 4pt so the values can grow without scrolling.
+            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 4) {
                 GridRow {
                     cell("TIME",  value: formatDuration(workoutManager.elapsed),     tint: .white)
                     cell("DIST",  value: formatDistance(workoutManager.distanceMeters), tint: .white)
@@ -56,24 +60,36 @@ private struct MetricsPage: View {
                     cell("CLIMB", value: "+\(Int(workoutManager.elevationGain)) m",        tint: .orange)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .padding(.horizontal, 6)
-            .padding(.vertical, 4)
+            .padding(.top, 2)
+
+            // HR zone strip — Apple Workout-style. Hidden in dim mode
+            // (it's decorative; the numbers carry the data).
+            if !isDimmed {
+                HRZonesBar(bpm: workoutManager.heartRate)
+                    .padding(.horizontal, 6)
+                    .padding(.bottom, 4)
+                    .padding(.top, 6)
+            }
         }
     }
 
     /// Single metric cell — label on top in tiny caps, value below in
     /// big monospaced digits. Tint color helps glance-parsing.
+    /// Bumped from 24pt → 30pt now that the inter-row spacing is
+    /// halved; the screen feels less crowded with bigger numbers and
+    /// the same number of rows.
     private func cell(_ label: String, value: String, tint: Color) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: 0) {
             Text(label)
                 .font(.system(size: 10, weight: .semibold))
                 .tracking(0.6)
                 .foregroundStyle(isDimmed ? .white.opacity(0.55) : .secondary)
             Text(value)
-                .font(.system(size: isDimmed ? 26 : 24, weight: .bold))
+                .font(.system(size: isDimmed ? 32 : 30, weight: .bold))
                 .monospacedDigit()
-                .minimumScaleFactor(0.6)
+                .minimumScaleFactor(0.55)
                 .lineLimit(1)
                 .foregroundStyle(isDimmed ? .white : tint)
         }
