@@ -43,9 +43,10 @@ private struct MetricsPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Grid takes all the vertical space it can grab, then the
-            // HR bar pins to the bottom. Spacing tightened from 10pt
-            // down to 4pt so the values can grow without scrolling.
+            // Grid uses its INTRINSIC height (no maxHeight:.infinity)
+            // so the HR bar at the bottom gets the room it needs.
+            // Spacer expands to push the bar to the screen's bottom
+            // edge while keeping the grid up top.
             Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 4) {
                 GridRow {
                     cell("TIME",  value: formatDuration(workoutManager.elapsed),     tint: .white)
@@ -60,17 +61,20 @@ private struct MetricsPage: View {
                     cell("CLIMB", value: "+\(Int(workoutManager.elevationGain)) m",        tint: .orange)
                 }
             }
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
             .padding(.horizontal, 6)
             .padding(.top, 2)
 
-            // HR zone strip — Apple Workout-style. Hidden in dim mode
-            // (it's decorative; the numbers carry the data).
+            Spacer(minLength: 0)
+
+            // HR zone strip — Apple Workout-style. Reserved 32pt
+            // minimum so the active pill never gets squeezed below
+            // legibility. Hidden in dim mode (decorative; the HR
+            // number above carries the data).
             if !isDimmed {
                 HRZonesBar(bpm: workoutManager.heartRate)
+                    .frame(minHeight: 32)
                     .padding(.horizontal, 6)
-                    .padding(.bottom, 4)
-                    .padding(.top, 6)
+                    .padding(.bottom, 6)
             }
         }
     }

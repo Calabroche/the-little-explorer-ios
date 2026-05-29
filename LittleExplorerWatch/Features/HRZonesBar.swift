@@ -57,31 +57,33 @@ struct HRZonesBar: View {
     private func cell(for index: Int) -> some View {
         let active = (index == currentZone)
         if active {
-            // Active pill: takes ~2.4× the horizontal space of an
-            // inactive cell. Heart icon + "ZONE N" text on a colored
-            // background, mirroring the Apple Workout layout.
+            // Active pill: wide rounded rect with heart glyph +
+            // "ZONE N" text on the zone's color. Takes ~3× the
+            // horizontal space of an inactive cell thanks to
+            // layoutPriority + minWidth, so the current zone *really*
+            // pops out at arm's length.
             ZStack {
-                RoundedRectangle(cornerRadius: 8)
+                RoundedRectangle(cornerRadius: 10)
                     .fill(colors[index])
-                HStack(spacing: 4) {
+                HStack(spacing: 5) {
                     Image(systemName: "heart.fill")
-                        .font(.system(size: 11, weight: .bold))
+                        .font(.system(size: 13, weight: .bold))
                     Text("ZONE \(index + 1)")
-                        .font(.system(size: 11, weight: .heavy))
-                        .tracking(0.5)
+                        .font(.system(size: 13, weight: .heavy))
+                        .tracking(0.4)
                 }
                 .foregroundStyle(.white)
             }
-            .frame(height: 24)
-            .frame(maxWidth: .infinity)
-            .layoutPriority(2)
+            .frame(height: 30)
+            .frame(minWidth: 90)
+            .layoutPriority(10)
         } else {
-            // Inactive cells: solid color but dimmer, shorter
-            // (~10 pt vs 24 pt) so the active pill pops above the row.
-            RoundedRectangle(cornerRadius: 4)
-                .fill(colors[index].opacity(0.55))
-                .frame(height: 10)
-                .frame(maxWidth: .infinity)
+            // Inactive cells: short colored markers ~9 pt high. They
+            // still hint at the surrounding zones (cooler → warmer)
+            // but yield almost all horizontal space to the active pill.
+            RoundedRectangle(cornerRadius: 3)
+                .fill(colors[index].opacity(0.45))
+                .frame(width: 12, height: 9)
                 .layoutPriority(1)
         }
     }
