@@ -27,11 +27,33 @@ final class WorkoutManager: NSObject {
     private(set) var elapsed: TimeInterval = 0
     private(set) var distanceMeters: Double = 0
     private(set) var speedKmh: Double = 0
+    private(set) var maxSpeedKmh: Double = 0
     private(set) var heartRate: Int?
+    private(set) var maxHeartRate: Int = 0
+    /// Sum of positive altitude deltas with a 0.5 m noise floor. Same
+    /// algorithm as the iOS PendingRide → RideRecord conversion so the
+    /// number the rider sees during the ride matches what shows up in
+    /// the activity feed afterwards.
+    private(set) var elevationGain: Double = 0
     /// Set when the user has denied location access. The view uses
     /// this to render an "open Settings" hint instead of silently
     /// recording a ride with no GPS trace.
     private(set) var locationDenied = false
+
+    /// Derived: average speed over the whole ride. Returns 0 until
+    /// any distance has been accumulated.
+    var avgSpeedKmh: Double {
+        guard elapsed > 0 else { return 0 }
+        return (distanceMeters / 1000) / (elapsed / 3600)
+    }
+
+    /// Derived: average HR over all collected samples. nil if no HR
+    /// samples have been collected yet.
+    var avgHeartRate: Int? {
+        guard !bufferedHRSamples.isEmpty else { return nil }
+        let sum = bufferedHRSamples.map(\.value).reduce(0, +)
+        return Int(sum / Double(bufferedHRSamples.count))
+    }
 
     // ── Dependencies ───────────────────────────────────────────────
     private let healthStore = HKHealthStore()
@@ -39,6 +61,10 @@ final class WorkoutManager: NSObject {
     /// Crash-recovery scratch file. Persisted every ~30 s while a
     /// ride is active so a Watch reboot doesn't lose the data.
     private let inProgress = InProgressRideStore()
+    /// Voice nav coach (Phase E.2). Bound to the active itinerary
+    /// when start(itinerary:) is called; receives every GPS fix to
+    /// fire the right announcement at the right moment.
+    let navigation = NavigationGuide()
     private weak var sessionManager: WatchSessionManager?
     private let logger = Logger(subsystem: "com.calabrese.little-explorer-ios.watchkitapp", category: "WorkoutManager")
 
@@ -109,6 +135,11 @@ final class WorkoutManager: NSObject {
     func start(itinerary: Itinerary) async {
         activeItineraryId = itinerary.id
         activeItinerary = itinerary
+        // Load the maneuvers into the voice coach BEFORE start() so
+        // the first GPS fix already has a step sequence to compare
+        // against. Skips silently when steps is nil (older itineraries
+        // without OSRM step data).
+        navigation.setItinerary(itinerary)
         await start()
     }
 
@@ -222,6 +253,12 @@ final class WorkoutManager: NSObject {
         activeItineraryId = nil
         activeItinerary = nil
         latestCoordinate = nil
+        maxSpeedKmh = 0
+        maxHeartRate = 0
+        elevationGain = 0
+        // Clear the nav coach so the next ride doesn't fire stale
+        // announcements before its own itinerary loads.
+        navigation.setItinerary(nil)
         bufferedFixes.removeAll()
         bufferedHRSamples.removeAll()
     }
@@ -487,6 +524,7 @@ extension WorkoutManager: HKLiveWorkoutBuilderDelegate {
             let unit = HKUnit.count().unitDivided(by: .minute())
             if let value = stats.mostRecentQuantity()?.doubleValue(for: unit) {
                 heartRate = Int(value)
+                if Int(value) > maxHeartRate { maxHeartRate = Int(value) }
                 bufferedHRSamples.append((t: Date.now, value: value))
             }
         default:
@@ -536,14 +574,31 @@ extension WorkoutManager: CLLocationManagerDelegate {
             if let last = bufferedFixes.last {
                 distanceMeters += fix.distance(from: last)
             }
+            // Elevation gain: positive deltas only, with a 0.5 m noise
+            // floor so altimeter jitter on flat rides doesn't
+            // accumulate phantom climbing. Track the last "accepted"
+            // altitude so each gain segment is computed against it
+            // (not against the previous fix, which could swing).
+            if let last = bufferedFixes.last {
+                let delta = fix.altitude - last.altitude
+                if delta > 0.5 {
+                    elevationGain += delta
+                }
+            }
             bufferedFixes.append(fix)
             // CLLocation.speed is m/s; mask to >= 0 (the API returns
             // a negative value when speed is unknown).
-            speedKmh = max(0, fix.speed) * 3.6
+            let kmh = max(0, fix.speed) * 3.6
+            speedKmh = kmh
+            if kmh > maxSpeedKmh { maxSpeedKmh = kmh }
             // Surface the freshest fix to the UI so the map can
             // re-center on the rider without us holding a full
             // CLLocationManager from inside the view.
             latestCoordinate = fix.coordinate
+            // Feed the voice coach. No-op for freeform rides; for
+            // itinerary rides this is what triggers the "in 200 m
+            // turn left" announcements.
+            navigation.ingest(fix: fix)
         }
     }
 }

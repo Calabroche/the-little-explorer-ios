@@ -22,6 +22,11 @@ struct Waypoint: Codable, Hashable, Identifiable {
     }
 }
 
+// NOTE: The OSRM-step type `NavStep` already lives in Route.swift —
+// reused here so we don't fork the model. Its `start` is a Coordinate
+// (not a [Double] pair), so call-sites can read it directly without
+// re-packing.
+
 /// A saved tour: ordered waypoints + target km + cached routing.
 struct Itinerary: Codable, Hashable, Identifiable {
     let id: String
@@ -34,6 +39,10 @@ struct Itinerary: Codable, Hashable, Identifiable {
     var distanceKm: Double?
     var durationMin: Int?
     var geometry: [Coordinate]?
+    /// Turn-by-turn maneuvers used by the Watch's voice nav. Optional
+    /// because itineraries saved before the field existed won't have
+    /// it — the Watch falls back to silent map guidance in that case.
+    var steps: [NavStep]?
     // Cached elevation profile.
     var elevSampleIndices: [Int]?
     var elevations: [Double]?
