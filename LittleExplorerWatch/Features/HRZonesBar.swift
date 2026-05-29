@@ -1,13 +1,21 @@
 import SwiftUI
 
-/// Five-zone heart-rate bar, modelled on the Apple Workout / Activity
-/// app's "Zone X" pill. The active zone gets a wide rounded pill with
-/// a heart glyph + "ZONE N" label inside; inactive zones flank it as
-/// smaller colored cells. The whole bar fits ~28 pt of vertical space
-/// — big enough to read at a glance, small enough not to crowd the
-/// metric grid above it.
+/// Five-zone heart-rate bar — Apple Activity / Workout style.
 ///
-/// Zone boundaries are computed as percentages of `hrMax`:
+/// Layout:
+///   • 5 cells in a row, all visible at full color (cool blue → warm
+///     red as intensity climbs).
+///   • Inactive cells are square-ish colored chips (~28×26 pt).
+///   • The active cell expands into a wider rounded pill with a
+///     heart glyph + "ZONE N" text. Same row height, larger width.
+///   • A small white triangle pointing UP sits directly below the
+///     active cell — same affordance Apple uses in the Workout app.
+///
+/// Text color in the active pill is luminance-aware so it stays
+/// readable against any zone's background (black on bright Z3 green
+/// and Z4 amber; white on the darker Z1 / Z2 / Z5).
+///
+/// Zone boundaries: percentages of `hrMax`:
 ///   Z1: 50-60 %  recovery
 ///   Z2: 60-70 %  endurance
 ///   Z3: 70-80 %  tempo
@@ -40,15 +48,42 @@ struct HRZonesBar: View {
     private let colors: [Color] = [
         Color(red: 0.13, green: 0.42, blue: 0.66),    // Z1 deep blue
         Color(red: 0.16, green: 0.66, blue: 0.66),    // Z2 teal
-        Color(red: 0.46, green: 0.78, blue: 0.21),    // Z3 green
+        Color(red: 0.66, green: 0.92, blue: 0.18),    // Z3 bright lime
         Color(red: 0.95, green: 0.59, blue: 0.15),    // Z4 amber
         Color(red: 0.84, green: 0.20, blue: 0.20),    // Z5 red
     ]
 
+    /// Z3 (lime) and Z4 (amber) are bright enough that black text
+    /// reads better than white. Z1 / Z2 / Z5 are darker → white text.
+    private func textColor(forZone index: Int) -> Color {
+        (index == 2 || index == 3) ? .black : .white
+    }
+
     var body: some View {
-        HStack(spacing: 3) {
-            ForEach(0..<5, id: \.self) { i in
-                cell(for: i)
+        VStack(spacing: 1) {
+            HStack(spacing: 4) {
+                ForEach(0..<5, id: \.self) { i in
+                    cell(for: i)
+                }
+            }
+            // Triangle row — same HStack layout so the indicator
+            // lands directly under the active cell's column. Empty
+            // placeholders maintain horizontal alignment on the
+            // other columns.
+            HStack(spacing: 4) {
+                ForEach(0..<5, id: \.self) { i in
+                    if i == currentZone {
+                        Triangle()
+                            .fill(.white)
+                            .frame(width: 8, height: 5)
+                            .frame(maxWidth: .infinity)
+                            .layoutPriority(10)
+                    } else {
+                        Color.clear
+                            .frame(width: 28, height: 5)
+                            .layoutPriority(1)
+                    }
+                }
             }
         }
     }
@@ -57,34 +92,42 @@ struct HRZonesBar: View {
     private func cell(for index: Int) -> some View {
         let active = (index == currentZone)
         if active {
-            // Active pill: wide rounded rect with heart glyph +
-            // "ZONE N" text on the zone's color. Takes ~3× the
-            // horizontal space of an inactive cell thanks to
-            // layoutPriority + minWidth, so the current zone *really*
-            // pops out at arm's length.
             ZStack {
-                RoundedRectangle(cornerRadius: 10)
+                RoundedRectangle(cornerRadius: 13)
                     .fill(colors[index])
-                HStack(spacing: 5) {
+                HStack(spacing: 4) {
                     Image(systemName: "heart.fill")
-                        .font(.system(size: 13, weight: .bold))
+                        .font(.system(size: 12, weight: .bold))
                     Text("ZONE \(index + 1)")
-                        .font(.system(size: 13, weight: .heavy))
+                        .font(.system(size: 12, weight: .heavy))
                         .tracking(0.4)
                 }
-                .foregroundStyle(.white)
+                .foregroundStyle(textColor(forZone: index))
             }
-            .frame(height: 30)
-            .frame(minWidth: 90)
+            .frame(height: 26)
+            .frame(maxWidth: .infinity)
             .layoutPriority(10)
         } else {
-            // Inactive cells: short colored markers ~9 pt high. They
-            // still hint at the surrounding zones (cooler → warmer)
-            // but yield almost all horizontal space to the active pill.
-            RoundedRectangle(cornerRadius: 3)
-                .fill(colors[index].opacity(0.45))
-                .frame(width: 12, height: 9)
+            // Inactive cells stay full color (not dimmed) at a
+            // compact rounded-square size — they're informational
+            // *and* visually rich, matching Apple Activity's design.
+            RoundedRectangle(cornerRadius: 6)
+                .fill(colors[index])
+                .frame(width: 28, height: 26)
                 .layoutPriority(1)
         }
+    }
+}
+
+/// Equilateral-ish triangle pointing UP (apex at top). Used as the
+/// "current zone" indicator below the HR bar.
+private struct Triangle: Shape {
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        p.move(to:    CGPoint(x: rect.midX, y: rect.minY))   // apex up
+        p.addLine(to: CGPoint(x: rect.minX, y: rect.maxY))   // base bottom-left
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))   // base bottom-right
+        p.closeSubpath()
+        return p
     }
 }
