@@ -72,7 +72,7 @@ private struct MetricsPage: View {
             // number above carries the data).
             if !isDimmed {
                 HRZonesBar(bpm: workoutManager.heartRate)
-                    .frame(minHeight: 32)
+                    .frame(minHeight: 42)   // 32pt pill + ~5pt triangle + breathing
                     .padding(.horizontal, 6)
                     .padding(.bottom, 6)
             }

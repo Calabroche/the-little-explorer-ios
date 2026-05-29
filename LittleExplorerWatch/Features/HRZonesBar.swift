@@ -92,28 +92,30 @@ struct HRZonesBar: View {
     private func cell(for index: Int) -> some View {
         let active = (index == currentZone)
         if active {
-            ZStack {
-                RoundedRectangle(cornerRadius: 13)
-                    .fill(colors[index])
-                HStack(spacing: 4) {
-                    Image(systemName: "heart.fill")
-                        .font(.system(size: 12, weight: .bold))
-                    Text("ZONE \(index + 1)")
-                        .font(.system(size: 12, weight: .heavy))
-                        .tracking(0.4)
-                }
-                .foregroundStyle(textColor(forZone: index))
+            // Active pill: bigger and more dramatic — height 32pt,
+            // font 14pt + heavy weight, generous horizontal padding
+            // so the text + heart breathe inside the pill. Same
+            // shape as the Apple Workout / Activity rounded pill.
+            HStack(spacing: 5) {
+                Image(systemName: "heart.fill")
+                    .font(.system(size: 14, weight: .bold))
+                Text("ZONE \(index + 1)")
+                    .font(.system(size: 14, weight: .heavy))
+                    .tracking(0.5)
             }
-            .frame(height: 26)
+            .foregroundStyle(textColor(forZone: index))
+            .padding(.horizontal, 12)
+            .frame(height: 32)
             .frame(maxWidth: .infinity)
+            .background(colors[index], in: RoundedRectangle(cornerRadius: 16))
             .layoutPriority(10)
         } else {
             // Inactive cells stay full color (not dimmed) at a
             // compact rounded-square size — they're informational
             // *and* visually rich, matching Apple Activity's design.
-            RoundedRectangle(cornerRadius: 6)
+            RoundedRectangle(cornerRadius: 7)
                 .fill(colors[index])
-                .frame(width: 28, height: 26)
+                .frame(width: 28, height: 32)
                 .layoutPriority(1)
         }
     }
