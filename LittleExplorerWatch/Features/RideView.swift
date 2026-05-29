@@ -43,15 +43,15 @@ private struct MetricsPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Grid takes its intrinsic height. Earlier iterations
-            // sat tight at the top with a big Spacer pushing the
-            // HR bar to the bottom — felt wasteful. Now the rows
-            // breathe (verticalSpacing 14) and the value font is
-            // bumped to 40pt so each metric reads from arm's
-            // length. Vertical budget on Watch Ultra (~205pt usable):
-            // 3 rows × ~56pt + 2 × 14pt gaps + 40pt HR bar ≈ 196pt,
-            // fits with a small Spacer cushion.
-            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 14) {
+            // Grid takes its intrinsic height. Value font pushed
+            // to 45pt for arm's-length reading, row gaps trimmed
+            // back to 10pt to leave room for the taller HR pill.
+            // Vertical budget on Watch Ultra (~205pt usable):
+            // 3 × (11+2+45 = 58pt) rows + 2 × 10pt gaps = 194pt
+            // grid + 52pt HR bar = 246pt — over the strict budget
+            // so minimumScaleFactor squeezes long values like
+            // "1:23:45" gracefully. Steady-state values fit raw.
+            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 10) {
                 GridRow {
                     cell("TIME",  value: formatDuration(workoutManager.elapsed),     tint: .white)
                     cell("DIST",  value: formatDistance(workoutManager.distanceMeters), tint: .white)
@@ -68,27 +68,28 @@ private struct MetricsPage: View {
             .padding(.horizontal, 6)
             .padding(.top, 2)
 
-            Spacer(minLength: 4)
+            Spacer(minLength: 2)
 
-            // HR zone strip pinned to the screen's bottom edge —
-            // padding.bottom dropped to 2pt so there's no dead air
-            // below the pill. Reserved 38pt for the pill (32pt) +
-            // triangle (5pt) + 1pt breathing.
+            // HR zone strip — pill bumped to 44pt to match the
+            // bigger metric digits visually. Reserved 54pt: 44pt
+            // pill + 2pt VStack gap + 6pt triangle + 2pt safety.
+            // Padding.bottom 0 keeps it flush at the screen edge
+            // (no dead air below).
             if !isDimmed {
                 HRZonesBar(bpm: workoutManager.heartRate)
-                    .frame(minHeight: 38)
+                    .frame(minHeight: 54)
                     .padding(.horizontal, 6)
-                    .padding(.bottom, 2)
+                    .padding(.bottom, 0)
             }
         }
     }
 
     /// Single metric cell — label on top in tiny caps, value below
     /// in big monospaced digits. Tint color helps glance-parsing.
-    /// Value font pushed to 40pt (dim 42) — biggest the layout
-    /// allows before the third row crashes into the HR bar.
-    /// Label bumped to 11pt and given a 2pt gap to the value so
-    /// the hierarchy reads cleanly at a glance.
+    /// Value at 45pt (dim 47) — the rider should be able to read
+    /// the speed without dropping their gaze from the road.
+    /// minimumScaleFactor 0.5 absorbs the rare wide value
+    /// ("1:23:45", "120 km/h") without breaking the grid.
     private func cell(_ label: String, value: String, tint: Color) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(label)
@@ -96,7 +97,7 @@ private struct MetricsPage: View {
                 .tracking(0.6)
                 .foregroundStyle(isDimmed ? .white.opacity(0.55) : .secondary)
             Text(value)
-                .font(.system(size: isDimmed ? 42 : 40, weight: .bold))
+                .font(.system(size: isDimmed ? 47 : 45, weight: .bold))
                 .monospacedDigit()
                 .minimumScaleFactor(0.5)
                 .lineLimit(1)

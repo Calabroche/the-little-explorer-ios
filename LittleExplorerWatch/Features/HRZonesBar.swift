@@ -60,7 +60,7 @@ struct HRZonesBar: View {
     }
 
     var body: some View {
-        VStack(spacing: 1) {
+        VStack(spacing: 2) {
             HStack(spacing: 4) {
                 ForEach(0..<5, id: \.self) { i in
                     cell(for: i)
@@ -70,18 +70,18 @@ struct HRZonesBar: View {
             // lands directly under the active cell's column. Empty
             // placeholders maintain horizontal alignment on the
             // other columns. Widths match the cell row's geometry
-            // (active flex, inactive 18 pt).
+            // (active flex, inactive 22 pt).
             HStack(spacing: 4) {
                 ForEach(0..<5, id: \.self) { i in
                     if i == currentZone {
                         Triangle()
                             .fill(.white)
-                            .frame(width: 8, height: 5)
-                            .frame(minWidth: 95, maxWidth: .infinity)
+                            .frame(width: 10, height: 6)
+                            .frame(minWidth: 110, maxWidth: .infinity)
                             .layoutPriority(10)
                     } else {
                         Color.clear
-                            .frame(width: 18, height: 5)
+                            .frame(width: 22, height: 6)
                             .layoutPriority(1)
                     }
                 }
@@ -93,34 +93,34 @@ struct HRZonesBar: View {
     private func cell(for index: Int) -> some View {
         let active = (index == currentZone)
         if active {
-            // Active pill — takes ~55 % of the bar's width so the
-            // "ZONE N" text always fits without truncation. Bigger
-            // and more dramatic than the inactive cells:
-            //   • height 32 pt vs 24 pt
-            //   • font 13 pt heavy + heart glyph
-            //   • generous horizontal pad so the text breathes
-            //   • rounded pill shape (cornerRadius 16 pt)
-            HStack(spacing: 4) {
+            // Active pill — generous height (44 pt) so the
+            // "ZONE N" badge feels like the focal point of the
+            // bottom band, not an afterthought. Matches Apple
+            // Workout's pill proportions on Ultra screens.
+            //   • height 44 pt vs 34 pt inactive chips
+            //   • font 15 pt heavy + heart glyph
+            //   • rounded pill (cornerRadius 22 pt = half height)
+            HStack(spacing: 5) {
                 Image(systemName: "heart.fill")
-                    .font(.system(size: 13, weight: .bold))
+                    .font(.system(size: 15, weight: .bold))
                 Text("ZONE \(index + 1)")
-                    .font(.system(size: 13, weight: .heavy))
+                    .font(.system(size: 15, weight: .heavy))
                     .tracking(0.3)
                     .fixedSize(horizontal: true, vertical: false)
             }
             .foregroundStyle(textColor(forZone: index))
-            .padding(.horizontal, 10)
-            .frame(minWidth: 95, maxWidth: .infinity)
-            .frame(height: 32)
-            .background(colors[index], in: RoundedRectangle(cornerRadius: 16))
+            .padding(.horizontal, 12)
+            .frame(minWidth: 110, maxWidth: .infinity)
+            .frame(height: 44)
+            .background(colors[index], in: RoundedRectangle(cornerRadius: 22))
             .layoutPriority(10)
         } else {
-            // Inactive cells: smaller squares so the active pill has
-            // room to display its full "ZONE N" text. Compact but
-            // still visually present at the 18 × 24 pt baseline.
-            RoundedRectangle(cornerRadius: 5)
+            // Inactive cells: taller to balance the bigger active
+            // pill (22 × 34 pt baseline). Still narrow enough that
+            // the pill keeps ~55 % of the bar width.
+            RoundedRectangle(cornerRadius: 7)
                 .fill(colors[index])
-                .frame(width: 18, height: 24)
+                .frame(width: 22, height: 34)
                 .layoutPriority(1)
         }
     }
