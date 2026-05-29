@@ -564,15 +564,38 @@ extension WorkoutManager: CLLocationManagerDelegate {
     /// accuracy = unknown, or > 30 m horizontal error = urban canyon
     /// noise) so the trace doesn't get a "GPS spike" that adds 50 m
     /// of phantom distance every time we pass under a bridge.
+    ///
+    /// Stationary filter: when speed is reliable AND below 1 m/s
+    /// (~3.6 km/h, slower than a walking pace), OR when the new fix
+    /// is < 5 m from the last *accepted* fix, we drop the fix outright.
+    /// Without this, sitting at a red light or pausing for a phone
+    /// call accumulates phantom distance because each fix's lat/lng
+    /// drifts by 5-30 m thanks to GPS noise — Strava and Garmin both
+    /// apply a similar floor.
     @MainActor
     private func ingest(fixes: [CLLocation]) {
         guard isActive, !isPaused else { return }
         for fix in fixes {
             guard fix.horizontalAccuracy > 0, fix.horizontalAccuracy < 30 else { continue }
-            // Distance update — append, then update the running total
-            // and current speed from the latest pair.
+
+            // Stationary filter: trust fix.speed when it's a real
+            // value (>= 0). On a Watch the speed reading is much
+            // less noisy than position deltas because it comes from
+            // a Doppler shift of the GPS carrier rather than
+            // delta-positions.
+            let reliableSpeed = fix.speed
+            if reliableSpeed >= 0 && reliableSpeed < 1.0 {
+                // Treat as stopped. Don't accumulate distance, don't
+                // bump the speed UI to a positive value via the noise.
+                speedKmh = 0
+                continue
+            }
             if let last = bufferedFixes.last {
-                distanceMeters += fix.distance(from: last)
+                let segment = fix.distance(from: last)
+                // Belt-and-suspenders for when fix.speed is unreliable
+                // (returns -1) but the position barely moved.
+                if reliableSpeed < 0 && segment < 5 { continue }
+                distanceMeters += segment
             }
             // Elevation gain: positive deltas only, with a 0.5 m noise
             // floor so altimeter jitter on flat rides doesn't

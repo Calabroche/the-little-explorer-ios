@@ -1,10 +1,11 @@
 import SwiftUI
 
-/// Five-zone heart-rate bar à la Apple Workout. Colors match the
-/// system app's palette (blue → red as intensity climbs). The current
-/// zone is highlighted with a brighter fill + white tick on top, so
-/// the rider can read effort at a glance without parsing the bpm
-/// number itself.
+/// Five-zone heart-rate bar, modelled on the Apple Workout / Activity
+/// app's "Zone X" pill. The active zone gets a wide rounded pill with
+/// a heart glyph + "ZONE N" label inside; inactive zones flank it as
+/// smaller colored cells. The whole bar fits ~28 pt of vertical space
+/// — big enough to read at a glance, small enough not to crowd the
+/// metric grid above it.
 ///
 /// Zone boundaries are computed as percentages of `hrMax`:
 ///   Z1: 50-60 %  recovery
@@ -47,33 +48,41 @@ struct HRZonesBar: View {
     var body: some View {
         HStack(spacing: 3) {
             ForEach(0..<5, id: \.self) { i in
-                let active = (i == currentZone)
-                RoundedRectangle(cornerRadius: 2)
-                    .fill(colors[i].opacity(active ? 1.0 : 0.30))
-                    .frame(height: active ? 8 : 5)
-                    .overlay(alignment: .top) {
-                        if active {
-                            // Subtle white triangle "tick" anchored at
-                            // the cell — same affordance Apple uses to
-                            // mark the current zone in the Workout app.
-                            Triangle()
-                                .fill(.white)
-                                .frame(width: 6, height: 4)
-                                .offset(y: -5)
-                        }
-                    }
+                cell(for: i)
             }
         }
     }
-}
 
-private struct Triangle: Shape {
-    func path(in rect: CGRect) -> Path {
-        var p = Path()
-        p.move(to:    CGPoint(x: rect.midX, y: rect.maxY))
-        p.addLine(to: CGPoint(x: rect.minX, y: rect.minY))
-        p.addLine(to: CGPoint(x: rect.maxX, y: rect.minY))
-        p.closeSubpath()
-        return p
+    @ViewBuilder
+    private func cell(for index: Int) -> some View {
+        let active = (index == currentZone)
+        if active {
+            // Active pill: takes ~2.4× the horizontal space of an
+            // inactive cell. Heart icon + "ZONE N" text on a colored
+            // background, mirroring the Apple Workout layout.
+            ZStack {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(colors[index])
+                HStack(spacing: 4) {
+                    Image(systemName: "heart.fill")
+                        .font(.system(size: 11, weight: .bold))
+                    Text("ZONE \(index + 1)")
+                        .font(.system(size: 11, weight: .heavy))
+                        .tracking(0.5)
+                }
+                .foregroundStyle(.white)
+            }
+            .frame(height: 24)
+            .frame(maxWidth: .infinity)
+            .layoutPriority(2)
+        } else {
+            // Inactive cells: solid color but dimmer, shorter
+            // (~10 pt vs 24 pt) so the active pill pops above the row.
+            RoundedRectangle(cornerRadius: 4)
+                .fill(colors[index].opacity(0.55))
+                .frame(height: 10)
+                .frame(maxWidth: .infinity)
+                .layoutPriority(1)
+        }
     }
 }
