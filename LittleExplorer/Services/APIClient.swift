@@ -171,6 +171,84 @@ actor APIClient {
         }
     }
 
+    // MARK: - Itineraries
+
+    struct ItinerarySummary: Decodable, Sendable, Identifiable {
+        let id: String
+        let name: String
+        let distance_km: Double?
+        let created_at: String
+        let waypoint_count: Int
+    }
+
+    struct ItinerariesResponse: Decodable, Sendable {
+        let items: [ItinerarySummary]
+    }
+
+    struct ItineraryDetail: Decodable, Sendable {
+        let id: String
+        let name: String
+        let distance_km: Double?
+        let created_at: String
+        let payload: Itinerary
+    }
+
+    /// GET /api/itineraries — list of the user's saved itineraries
+    /// as lightweight summaries (no geometry / waypoints, just
+    /// metadata for picking).
+    func fetchItineraries() async throws -> [ItinerarySummary] {
+        let response: ItinerariesResponse = try await get("/api/itineraries")
+        return response.items
+    }
+
+    /// GET /api/itineraries?id=<id> — full itinerary with payload.
+    func fetchItinerary(id: String) async throws -> Itinerary {
+        let response: ItineraryDetail = try await get("/api/itineraries?id=\(id)")
+        return response.payload
+    }
+
+    /// POST /api/itineraries — persist an itinerary upstream so the
+    /// Watch can sync it + other devices can see it.
+    @discardableResult
+    func uploadItinerary(_ itinerary: Itinerary) async throws -> String {
+        struct Body: Encodable {
+            let id: String
+            let name: String
+            let distance_km: Double?
+            let payload: Itinerary
+        }
+        let body = Body(
+            id:          itinerary.id,
+            name:        itinerary.name,
+            distance_km: itinerary.distanceKm,
+            payload:     itinerary,
+        )
+        struct Result: Decodable { let id: String; let name: String }
+        let result: Result = try await post("/api/itineraries", body: body)
+        return result.id
+    }
+
+    /// DELETE /api/itineraries — remove server-side. Local cache is
+    /// updated by the caller.
+    func deleteItinerary(id: String) async throws {
+        let url = baseURL.appendingPathComponent("/api/itineraries")
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token = authToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["id": id])
+        let (data, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse {
+            if http.statusCode == 204 || (200..<300).contains(http.statusCode) { return }
+            if http.statusCode == 401 { throw APIError.unauthorized }
+            let preview = String(data: data.prefix(200), encoding: .utf8) ?? ""
+            Log.api.error("DELETE /api/itineraries \(http.statusCode) · \(preview, privacy: .public)")
+            throw APIError.http(http.statusCode)
+        }
+    }
+
     // MARK: - Bike maintenance tracker
 
     /// GET /api/equipment — returns the user's bike pieces with

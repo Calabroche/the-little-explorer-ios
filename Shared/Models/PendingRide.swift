@@ -28,4 +28,9 @@ struct PendingRide: Codable, Identifiable, Hashable, Sendable {
     let heartrate: [Double]
     let distanceM: Double
     let sport: String
+    /// Set when the rider picked a planned itinerary on the Watch
+    /// before starting. Lets the iPhone correlate the ride to the
+    /// route (and eventually surface "% completion" / deviation
+    /// stats in Phase D).
+    let itineraryId: String?
 }

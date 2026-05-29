@@ -65,6 +65,12 @@ final class WorkoutManager: NSObject {
     /// ride). Cleared by either action.
     private(set) var pendingRecovery: InProgressSnapshot?
 
+    /// Itinerary id the user picked at start time. Plumbed through to
+    /// the PendingRide so the iPhone (and later Strava / backend) knows
+    /// which planned route was followed. nil when the user starts a
+    /// freeform ride.
+    private var activeItineraryId: String?
+
     init(store: PendingRideStore, session: WatchSessionManager? = nil) {
         self.store = store
         self.sessionManager = session
@@ -83,6 +89,15 @@ final class WorkoutManager: NSObject {
     }
 
     // ── Lifecycle ──────────────────────────────────────────────────
+
+    /// Convenience overload that records the itinerary the user picked
+    /// — its id is plumbed into the resulting PendingRide so the iPhone
+    /// (and Strava sync-back) can correlate the ride to the planned
+    /// route. Behavior is otherwise identical to `start()`.
+    func start(itinerary: Itinerary) async {
+        activeItineraryId = itinerary.id
+        await start()
+    }
 
     func start() async {
         guard !isActive else { return }
@@ -191,6 +206,7 @@ final class WorkoutManager: NSObject {
         builder = nil
         self.startedAt = nil
         elapsed = 0
+        activeItineraryId = nil
         bufferedFixes.removeAll()
         bufferedHRSamples.removeAll()
     }
@@ -312,6 +328,10 @@ final class WorkoutManager: NSObject {
             heartrate: hr,
             distanceM: snap.distanceM,
             sport: "cycling",
+            // Crash-recovery doesn't know the itinerary id (it's not
+            // in the snapshot). v1: nil. Phase D will add it to the
+            // snapshot persistence to round-trip cleanly.
+            itineraryId: nil,
         )
         let url = store.save(ride)
         logger.notice("Recovered orphan ride \(id, privacy: .public): \(coords.count) GPS points, \(snap.distanceM, format: .fixed(precision: 0), privacy: .public) m")
@@ -378,6 +398,7 @@ final class WorkoutManager: NSObject {
             heartrate: hrAligned,
             distanceM: totalM,
             sport: "cycling",
+            itineraryId: activeItineraryId,
         )
     }
 

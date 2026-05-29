@@ -23,6 +23,10 @@ final class AppEnvironment {
     let activityManager = RideActivityManager()
     let localRides: LocalRideStore
     let activityStore: ActivityStore
+    /// Cross-feature library of saved itineraries. Backed by
+    /// UserDefaults locally + /api/itineraries server-side. Watch
+    /// sync pulls from this store (Phase B).
+    let itineraries = ItineraryStore()
     let healthKit = HealthKitService()
     /// Live BLE heart-rate monitor. Doesn't instantiate the CB stack
     /// until the user opens the pairing screen — keeps the system
@@ -47,9 +51,16 @@ final class AppEnvironment {
         // Strava upload via the same APIClient the rest of the app
         // uses (so the ride eventually shows up in Strava + syncs
         // back as a "real" activity).
-        watch.attach(localStore: localRides, api: api) { [weak self] _ in
+        watch.attach(localStore: localRides, api: api, itineraries: itineraries) { [weak self] _ in
             guard let self else { return }
             self.activityStore.refreshLocal(user: self.currentUser)
+        }
+
+        // ItineraryStore needs the APIClient to push changes to the
+        // backend when the user saves an itinerary on iOS. The
+        // onChange callback fans every mutation out to the Watch.
+        itineraries.attach(api: api) { [weak self] in
+            self?.watch.syncItinerariesToWatch()
         }
     }
 

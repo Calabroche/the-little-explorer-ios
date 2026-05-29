@@ -45,10 +45,42 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
 
     /// Wire the ingestion targets after env construction. Idempotent
     /// — calling it twice just replaces the references.
-    func attach(localStore: LocalRideStore, api: APIClient, onRideIngested: @MainActor @escaping (Int) -> Void) {
+    func attach(localStore: LocalRideStore, api: APIClient, itineraries: ItineraryStore, onRideIngested: @MainActor @escaping (Int) -> Void) {
         self.localStore = localStore
         self.api = api
+        self.itineraries = itineraries
         self.onRideIngested = onRideIngested
+        // Push the current itinerary library to the Watch on attach.
+        // Subsequent saves trigger pushes via `syncItinerariesToWatch`.
+        Task { @MainActor in self.syncItinerariesToWatch() }
+    }
+
+    private weak var itineraries: ItineraryStore?
+
+    /// Snapshot the iPhone's current itinerary library into a compact
+    /// representation and hand it to WatchConnectivity as the *latest*
+    /// application context. WCSession dedupes against the previous
+    /// context so re-calling this on every save is cheap.
+    @MainActor
+    func syncItinerariesToWatch() {
+        guard let session, let itineraries else { return }
+        // Encode each Itinerary as Data so we don't have to mirror
+        // the struct in Swift dictionaries. Watch decodes back.
+        let encoder = JSONEncoder()
+        encoder.dateEncodingStrategy = .iso8601
+        guard let data = try? encoder.encode(itineraries.items) else {
+            Log.watch.warning("syncItinerariesToWatch: encode failed")
+            return
+        }
+        do {
+            try session.updateApplicationContext([
+                "kind": "itineraries",
+                "data": data,
+            ])
+            Log.watch.notice("Pushed \(itineraries.items.count) itineraries to Watch (\(data.count) bytes)")
+        } catch {
+            Log.watch.error("Failed to push itineraries: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     func send(_ message: [String: Any]) {

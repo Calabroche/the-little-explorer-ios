@@ -5,7 +5,10 @@ import SwiftUI
 struct ItineraryView: View {
     @Environment(AppEnvironment.self) private var environment
     @State private var planner = PlannerState()
-    @State private var library = ItineraryStore()
+    /// Read the shared library from the environment so saves push to
+    /// the backend (Phase A) and become visible to the Watch (Phase B)
+    /// — the local-only @State copy was bypassing both layers.
+    private var library: ItineraryStore { environment.itineraries }
     @State private var cameraPosition: MapCameraPosition = .region(
         MKCoordinateRegion(
             center: CLLocationCoordinate2D(latitude: 45.81, longitude: 4.75),
@@ -76,10 +79,15 @@ struct ItineraryView: View {
             }
             .onAppear {
                 library.load(user: environment.currentUser)
+                // Phase A: reconcile with the backend on every appear
+                // so a save made on the web (or on another device)
+                // shows up here without a manual refresh.
+                Task { await library.syncFromServer(user: environment.currentUser) }
             }
             .onChange(of: environment.currentUser) { _, newUser in
                 library.load(user: newUser)
                 planner.clearAll()
+                Task { await library.syncFromServer(user: newUser) }
             }
             .sheet(isPresented: $showShareSheet) {
                 if let url = gpxFileURL {
@@ -102,7 +110,7 @@ struct ItineraryView: View {
             )) {
                 Button("Supprimer", role: .destructive) {
                     if let id = pendingDeleteId {
-                        library.remove(id: id, user: environment.currentUser)
+                        library.deleteAndUpload(id: id, user: environment.currentUser)
                         if planner.activeId == id { planner.clearAll() }
                     }
                     pendingDeleteId = nil
@@ -446,7 +454,9 @@ struct ItineraryView: View {
     private func save(planner: PlannerState) {
         guard planner.waypoints.count >= 2 else { return }
         let snapshot = planner.snapshot()
-        library.upsert(snapshot, user: environment.currentUser)
+        // Save locally + push to /api/itineraries so the Watch picks
+        // it up via WCSession on next reachability.
+        library.saveAndUpload(snapshot, user: environment.currentUser)
         planner.activeId = snapshot.id
         planner.name = snapshot.name
     }

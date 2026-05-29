@@ -4,10 +4,12 @@ struct WatchRootView: View {
     @Environment(WorkoutManager.self) private var workoutManager
 
     var body: some View {
-        if workoutManager.isActive {
-            RideView()
-        } else {
-            StartView()
+        NavigationStack {
+            if workoutManager.isActive {
+                RideView()
+            } else {
+                StartView()
+            }
         }
     }
 }
@@ -21,6 +23,7 @@ struct WatchRootView: View {
 private struct StartView: View {
     @Environment(WorkoutManager.self) private var workoutManager
     @Environment(PendingRideStore.self) private var pending
+    @Environment(ItineraryCache.self) private var itineraries
 
     var body: some View {
         ScrollView {
@@ -39,6 +42,19 @@ private struct StartView: View {
                 }
                 .buttonStyle(.borderedProminent)
 
+                if !itineraries.items.isEmpty {
+                    NavigationLink {
+                        ItineraryPickerView()
+                    } label: {
+                        Label(
+                            "Itinéraires (\(itineraries.items.count))",
+                            systemImage: "map.fill",
+                        )
+                        .frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                }
+
                 if workoutManager.locationDenied {
                     LocationDeniedHint()
                 }
@@ -53,6 +69,51 @@ private struct StartView: View {
             }
             .padding()
         }
+    }
+}
+
+/// List view for the itineraries pushed from the iPhone via
+/// WCSession (Phase B). Tap one → starts a workout with the
+/// itinerary attached as context (Phase C minimal).
+private struct ItineraryPickerView: View {
+    @Environment(ItineraryCache.self) private var cache
+    @Environment(WorkoutManager.self) private var workoutManager
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        List {
+            if cache.items.isEmpty {
+                ContentUnavailableView(
+                    "Pas encore d'itinéraires",
+                    systemImage: "map",
+                    description: Text("Crée un itinéraire sur l'app iPhone ou sur le web. Il apparaîtra ici dès que l'iPhone et la Watch peuvent se parler."),
+                )
+            } else {
+                ForEach(cache.items) { itinerary in
+                    Button {
+                        // Start with the chosen itinerary so the
+                        // resulting PendingRide carries its id and the
+                        // backend later knows which route was followed.
+                        Task {
+                            await workoutManager.start(itinerary: itinerary)
+                            dismiss()
+                        }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(itinerary.name)
+                                .font(.body.weight(.semibold))
+                                .lineLimit(2)
+                            if let km = itinerary.distanceKm {
+                                Text("\(km, format: .number.precision(.fractionLength(1))) km")
+                                    .font(.caption2)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        .navigationTitle("Itinéraires")
     }
 }
 
