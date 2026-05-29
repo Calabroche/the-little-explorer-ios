@@ -560,48 +560,58 @@ extension WorkoutManager: CLLocationManagerDelegate {
         }
     }
 
-    /// Per-fix ingestion. Reject low-quality samples (negative
-    /// accuracy = unknown, or > 30 m horizontal error = urban canyon
-    /// noise) so the trace doesn't get a "GPS spike" that adds 50 m
-    /// of phantom distance every time we pass under a bridge.
+    /// Per-fix ingestion. Indoor / low-signal conditions are the
+    /// hard case here: when the rider is sitting still on a bench
+    /// or stuck under a roof, GPS fixes drift 5-30 m every second
+    /// and `fix.speed` returns -1 (unreliable Doppler). Without a
+    /// strict filter the trace accumulates 100+ m of phantom
+    /// distance in 30 s of standing around.
     ///
-    /// Stationary filter: when speed is reliable AND below 1 m/s
-    /// (~3.6 km/h, slower than a walking pace), OR when the new fix
-    /// is < 5 m from the last *accepted* fix, we drop the fix outright.
-    /// Without this, sitting at a red light or pausing for a phone
-    /// call accumulates phantom distance because each fix's lat/lng
-    /// drifts by 5-30 m thanks to GPS noise — Strava and Garmin both
-    /// apply a similar floor.
+    /// Two-stage filter:
+    ///   1. **Quality gate**: drop fixes with horizontalAccuracy
+    ///      > 20 m or unknown (was 30 m — too loose for indoor).
+    ///   2. **Stationary gate**: classify the fix as stationary
+    ///      when (a) Doppler speed is reliable and < 1 m/s, OR (b)
+    ///      Doppler speed is unknown AND the implied speed
+    ///      (segment / dt vs last fix) is < 1.5 m/s, OR (c) the
+    ///      raw segment is < 8 m. Stationary fixes refresh the
+    ///      anchor (so a long pause doesn't snap a huge jump on
+    ///      resume) but don't add to distance.
+    ///
+    /// Same principle Strava / Garmin apply: trust nothing that
+    /// looks like it could be drift, even at the cost of slightly
+    /// under-reporting tight slow-speed sections.
     @MainActor
     private func ingest(fixes: [CLLocation]) {
         guard isActive, !isPaused else { return }
         for fix in fixes {
-            guard fix.horizontalAccuracy > 0, fix.horizontalAccuracy < 30 else { continue }
+            // Tightened accuracy gate. Indoor "decent" fixes
+            // still drift wildly; 20 m is the threshold Strava
+            // uses for its own auto-pause heuristic.
+            guard fix.horizontalAccuracy > 0, fix.horizontalAccuracy < 20 else { continue }
 
-            // Stationary filter: trust fix.speed when it's a real
-            // value (>= 0). On a Watch the speed reading is much
-            // less noisy than position deltas because it comes from
-            // a Doppler shift of the GPS carrier rather than
-            // delta-positions.
-            let reliableSpeed = fix.speed
-            if reliableSpeed >= 0 && reliableSpeed < 1.0 {
-                // Treat as stopped. Don't accumulate distance, don't
-                // bump the speed UI to a positive value via the noise.
+            let dopplerSpeed = fix.speed   // m/s, -1 = unknown
+            let stationary = isStationary(fix: fix, dopplerSpeed: dopplerSpeed)
+
+            if stationary {
+                // Don't accumulate distance. DO refresh the anchor
+                // and the UI fix so the map marker tracks the
+                // rider's current cluster and the next real
+                // movement doesn't snap a huge segment.
                 speedKmh = 0
+                bufferedFixes.append(fix)
+                latestCoordinate = fix.coordinate
+                navigation.ingest(fix: fix)
                 continue
             }
+
+            // Real movement — commit the segment.
             if let last = bufferedFixes.last {
-                let segment = fix.distance(from: last)
-                // Belt-and-suspenders for when fix.speed is unreliable
-                // (returns -1) but the position barely moved.
-                if reliableSpeed < 0 && segment < 5 { continue }
-                distanceMeters += segment
+                distanceMeters += fix.distance(from: last)
             }
-            // Elevation gain: positive deltas only, with a 0.5 m noise
-            // floor so altimeter jitter on flat rides doesn't
-            // accumulate phantom climbing. Track the last "accepted"
-            // altitude so each gain segment is computed against it
-            // (not against the previous fix, which could swing).
+            // Elevation gain: positive deltas only, with a 0.5 m
+            // noise floor so altimeter jitter on flat rides
+            // doesn't accumulate phantom climbing.
             if let last = bufferedFixes.last {
                 let delta = fix.altitude - last.altitude
                 if delta > 0.5 {
@@ -609,19 +619,39 @@ extension WorkoutManager: CLLocationManagerDelegate {
                 }
             }
             bufferedFixes.append(fix)
-            // CLLocation.speed is m/s; mask to >= 0 (the API returns
-            // a negative value when speed is unknown).
-            let kmh = max(0, fix.speed) * 3.6
+            let kmh = max(0, dopplerSpeed) * 3.6
             speedKmh = kmh
             if kmh > maxSpeedKmh { maxSpeedKmh = kmh }
-            // Surface the freshest fix to the UI so the map can
-            // re-center on the rider without us holding a full
-            // CLLocationManager from inside the view.
             latestCoordinate = fix.coordinate
             // Feed the voice coach. No-op for freeform rides; for
             // itinerary rides this is what triggers the "in 200 m
             // turn left" announcements.
             navigation.ingest(fix: fix)
         }
+    }
+
+    /// True if the fix is consistent with the rider being still.
+    /// See `ingest(fixes:)` for the full rationale — this is the
+    /// drift filter that prevents 60+ m of phantom distance per
+    /// minute of indoor standing.
+    @MainActor
+    private func isStationary(fix: CLLocation, dopplerSpeed: Double) -> Bool {
+        // Gold-standard signal: reliable Doppler under 1 m/s
+        // (~3.6 km/h, slower than walking) ⇒ definitely stopped.
+        if dopplerSpeed >= 0 && dopplerSpeed < 1.0 { return true }
+
+        // Doppler unknown ⇒ infer from position delta.
+        guard let last = bufferedFixes.last else {
+            // First fix of the ride with no Doppler — be cautious
+            // and call it stationary; we need at least one anchor
+            // before we can compute a segment anyway.
+            return dopplerSpeed < 0
+        }
+        let segment = fix.distance(from: last)
+        let dt = max(0.5, fix.timestamp.timeIntervalSince(last.timestamp))
+        let impliedSpeed = segment / dt
+        // < 8 m of position change OR < 1.5 m/s implied speed
+        // ⇒ indistinguishable from drift.
+        return segment < 8 || impliedSpeed < 1.5
     }
 }
