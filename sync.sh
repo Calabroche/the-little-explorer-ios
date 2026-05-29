@@ -86,11 +86,14 @@ else
 fi
 
 # ── Physical device install ────────────────────────────────────────────
-# Pick the first connected iPhone (state "connected"). Extract the
-# 36-char UUID from anywhere on the line — "$(NF-1)" doesn't work
-# because the model column has spaces ("iPhone 14 Pro (...)").
-DEV_ID=$("$XCRUN" devicectl list devices 2>/dev/null \
-    | awk '/iPhone/ && /connected/ {
+# Pick the first iPhone in state "connected" OR "available" — devicectl
+# reports the latter once the developer disk image has been mounted,
+# and that state was previously rejected by the awk filter (silent skip).
+# Extract the 36-char UUID from anywhere on the line — "$(NF-1)" doesn't
+# work because the model column has spaces ("iPhone 14 Pro (...)").
+DEV_LIST=$("$XCRUN" devicectl list devices 2>/dev/null)
+DEV_ID=$(echo "$DEV_LIST" \
+    | awk '/iPhone/ && (/connected/ || /available/) {
         for (i = 1; i <= NF; i++) {
             if ($i ~ /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/) {
                 print $i
@@ -125,6 +128,63 @@ if [ -n "${DEV_ID:-}" ]; then
     fi
 else
     echo "↷ No connected iPhone — skipping device install."
+fi
+
+# ── Apple Watch install ────────────────────────────────────────────────
+# Same logic for the paired Apple Watch. Direct install via devicectl
+# is much more reliable than waiting for the iPhone Watch app to push
+# the companion bundle (which is invisible-fail-prone on Personal Team
+# free dev certs). The iOS app embeds the Watch app too, so this is
+# belt-and-suspenders — keeping both installs in sync prevents iOS
+# from cleaning up the "orphan companion" if anything desyncs.
+#
+# Requires Developer Mode ON on the Watch (Settings → Privacy & Security
+# → Developer Mode) and the Watch UNLOCKED + on its charger so the
+# developer disk image can mount. If either prerequisite is missing,
+# devicectl returns an explicit error (10005 / kAMDDeviceLocked) —
+# clearer than the silent "couldn't be installed" iOS shows otherwise.
+WATCH_ID=$(echo "$DEV_LIST" \
+    | awk '/Watch/ && (/connected/ || /available/) {
+        for (i = 1; i <= NF; i++) {
+            if ($i ~ /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/) {
+                print $i
+                exit
+            }
+        }
+    }')
+
+if [ -n "${WATCH_ID:-}" ]; then
+    echo "▶︎ Connected Apple Watch: $WATCH_ID"
+    WATCH_SCHEME="LittleExplorerWatch"
+    WATCH_DERIVED="./DerivedData-Watch"
+    rm -rf "$WATCH_DERIVED"
+
+    echo "▶︎ Building Debug for the Apple Watch…"
+    "$XCODEBUILD" \
+        -project "$PROJECT" \
+        -scheme "$WATCH_SCHEME" \
+        -destination "generic/platform=watchOS" \
+        -configuration Debug \
+        -derivedDataPath "$WATCH_DERIVED" \
+        -allowProvisioningUpdates \
+        -allowProvisioningDeviceRegistration \
+        build | tail -n 5
+
+    WATCH_APP="$WATCH_DERIVED/Build/Products/Debug-watchos/${WATCH_SCHEME}.app"
+    if [ -d "$WATCH_APP" ]; then
+        echo "▶︎ Installing on Apple Watch (may retry — Watch tunnel sometimes takes 2 tries to establish)…"
+        # First attempt often fails the tunnel handshake on Personal
+        # Team — retry once after a short pause if needed.
+        if ! "$XCRUN" devicectl device install app --device "$WATCH_ID" "$WATCH_APP" 2>&1 | tee /tmp/watch-install.log | tail -n 8; then
+            echo "↷ First Watch install attempt failed, retrying in 5s…"
+            sleep 5
+            "$XCRUN" devicectl device install app --device "$WATCH_ID" "$WATCH_APP" | tail -n 8
+        fi
+    else
+        echo "✗ Watch build did not produce an .app at $WATCH_APP"
+    fi
+else
+    echo "↷ No connected Apple Watch — skipping Watch install."
 fi
 
 echo "✓ Done.  Latest commit: $(git rev-parse --short HEAD) — $(git log -1 --pretty=%s)"
