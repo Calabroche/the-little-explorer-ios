@@ -43,10 +43,10 @@ private struct MetricsPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Grid uses its INTRINSIC height (no maxHeight:.infinity)
-            // so the HR bar at the bottom gets the room it needs.
-            // Spacer expands to push the bar to the screen's bottom
-            // edge while keeping the grid up top.
+            // Grid sits at the top edge — values are now LARGER
+            // (32pt → 34pt) so the rider reads them at arm's length
+            // without squinting. Inter-row spacing kept tight (4pt)
+            // to fit three rows + the HR bar inside one watch screen.
             Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 4) {
                 GridRow {
                     cell("TIME",  value: formatDuration(workoutManager.elapsed),     tint: .white)
@@ -64,26 +64,27 @@ private struct MetricsPage: View {
             .padding(.horizontal, 6)
             .padding(.top, 2)
 
-            Spacer(minLength: 0)
+            Spacer(minLength: 4)
 
-            // HR zone strip — Apple Workout-style. Reserved 32pt
-            // minimum so the active pill never gets squeezed below
-            // legibility. Hidden in dim mode (decorative; the HR
-            // number above carries the data).
+            // HR zone strip pinned to the screen's bottom edge —
+            // padding.bottom dropped to 2pt so there's no dead air
+            // below the pill. Reserved 38pt for the pill (32pt) +
+            // triangle (5pt) + 1pt breathing.
             if !isDimmed {
                 HRZonesBar(bpm: workoutManager.heartRate)
-                    .frame(minHeight: 42)   // 32pt pill + ~5pt triangle + breathing
+                    .frame(minHeight: 38)
                     .padding(.horizontal, 6)
-                    .padding(.bottom, 6)
+                    .padding(.bottom, 2)
             }
         }
     }
 
     /// Single metric cell — label on top in tiny caps, value below in
     /// big monospaced digits. Tint color helps glance-parsing.
-    /// Bumped from 24pt → 30pt now that the inter-row spacing is
-    /// halved; the screen feels less crowded with bigger numbers and
-    /// the same number of rows.
+    /// Bumped to 34pt (dim 36) so TIME / AVG / SPEED read at arm's
+    /// length while the rider's hands stay on the bars. The HR zone
+    /// strip sits flush at the bottom, so the value font has room
+    /// to grow without spilling off the watch screen.
     private func cell(_ label: String, value: String, tint: Color) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             Text(label)
@@ -91,7 +92,7 @@ private struct MetricsPage: View {
                 .tracking(0.6)
                 .foregroundStyle(isDimmed ? .white.opacity(0.55) : .secondary)
             Text(value)
-                .font(.system(size: isDimmed ? 32 : 30, weight: .bold))
+                .font(.system(size: isDimmed ? 36 : 34, weight: .bold))
                 .monospacedDigit()
                 .minimumScaleFactor(0.55)
                 .lineLimit(1)
