@@ -69,18 +69,19 @@ struct HRZonesBar: View {
             // Triangle row — same HStack layout so the indicator
             // lands directly under the active cell's column. Empty
             // placeholders maintain horizontal alignment on the
-            // other columns.
+            // other columns. Widths match the cell row's geometry
+            // (active flex, inactive 18 pt).
             HStack(spacing: 4) {
                 ForEach(0..<5, id: \.self) { i in
                     if i == currentZone {
                         Triangle()
                             .fill(.white)
                             .frame(width: 8, height: 5)
-                            .frame(maxWidth: .infinity)
+                            .frame(minWidth: 95, maxWidth: .infinity)
                             .layoutPriority(10)
                     } else {
                         Color.clear
-                            .frame(width: 28, height: 5)
+                            .frame(width: 18, height: 5)
                             .layoutPriority(1)
                     }
                 }
@@ -92,30 +93,34 @@ struct HRZonesBar: View {
     private func cell(for index: Int) -> some View {
         let active = (index == currentZone)
         if active {
-            // Active pill: bigger and more dramatic — height 32pt,
-            // font 14pt + heavy weight, generous horizontal padding
-            // so the text + heart breathe inside the pill. Same
-            // shape as the Apple Workout / Activity rounded pill.
-            HStack(spacing: 5) {
+            // Active pill — takes ~55 % of the bar's width so the
+            // "ZONE N" text always fits without truncation. Bigger
+            // and more dramatic than the inactive cells:
+            //   • height 32 pt vs 24 pt
+            //   • font 13 pt heavy + heart glyph
+            //   • generous horizontal pad so the text breathes
+            //   • rounded pill shape (cornerRadius 16 pt)
+            HStack(spacing: 4) {
                 Image(systemName: "heart.fill")
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.system(size: 13, weight: .bold))
                 Text("ZONE \(index + 1)")
-                    .font(.system(size: 14, weight: .heavy))
-                    .tracking(0.5)
+                    .font(.system(size: 13, weight: .heavy))
+                    .tracking(0.3)
+                    .fixedSize(horizontal: true, vertical: false)
             }
             .foregroundStyle(textColor(forZone: index))
-            .padding(.horizontal, 12)
+            .padding(.horizontal, 10)
+            .frame(minWidth: 95, maxWidth: .infinity)
             .frame(height: 32)
-            .frame(maxWidth: .infinity)
             .background(colors[index], in: RoundedRectangle(cornerRadius: 16))
             .layoutPriority(10)
         } else {
-            // Inactive cells stay full color (not dimmed) at a
-            // compact rounded-square size — they're informational
-            // *and* visually rich, matching Apple Activity's design.
-            RoundedRectangle(cornerRadius: 7)
+            // Inactive cells: smaller squares so the active pill has
+            // room to display its full "ZONE N" text. Compact but
+            // still visually present at the 18 × 24 pt baseline.
+            RoundedRectangle(cornerRadius: 5)
                 .fill(colors[index])
-                .frame(width: 28, height: 32)
+                .frame(width: 18, height: 24)
                 .layoutPriority(1)
         }
     }
