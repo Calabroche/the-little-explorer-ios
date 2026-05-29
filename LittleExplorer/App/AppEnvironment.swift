@@ -51,7 +51,7 @@ final class AppEnvironment {
         // Strava upload via the same APIClient the rest of the app
         // uses (so the ride eventually shows up in Strava + syncs
         // back as a "real" activity).
-        watch.attach(localStore: localRides, api: api, itineraries: itineraries) { [weak self] _ in
+        watch.attach(localStore: localRides, api: api, itineraries: itineraries, activityManager: activityManager) { [weak self] _ in
             guard let self else { return }
             self.activityStore.refreshLocal(user: self.currentUser)
         }

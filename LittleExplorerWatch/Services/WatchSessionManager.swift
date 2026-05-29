@@ -88,6 +88,72 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
         }
     }
 
+    // MARK: - Live Activity bridge
+    //
+    // While a ride is in progress on the Watch, we mirror its state
+    // onto the iPhone's Live Activity (Lock Screen + Dynamic Island)
+    // so the rider can glance at their phone in the bottle cage and
+    // see what the watch sees. Three signals:
+    //   • rideStarted  — sent once when the workout begins. Includes
+    //     the sport label and (for itinerary rides) the downsampled
+    //     route polyline so the lock-screen map can draw the path.
+    //   • rideUpdate   — sent every ~3 s while the ride is active
+    //     and not paused. Carries distance / duration / speed / HR /
+    //     position. `sendMessage` for low latency when reachable.
+    //   • rideEnded    — sent once when the workout finishes.
+    //
+    // For start / end we also use `transferUserInfo` as a durable
+    // backup: if the iPhone was unreachable at the moment of the
+    // start tap, the message still lands later so the activity
+    // eventually appears (or is dismissed) rather than orphaning.
+
+    /// Watch ride just began — kick the iPhone's Live Activity on.
+    func sendRideStarted(sportLabel: String, routePolyline: [[Double]]?) {
+        var msg: [String: Any] = [
+            "kind": "rideStarted",
+            "sportLabel": sportLabel,
+            "startedAt": Date().timeIntervalSince1970,
+        ]
+        if let routePolyline {
+            msg["routePolyline"] = routePolyline
+        }
+        send(msg)
+        // Durable backup in case iPhone wasn't reachable just then.
+        session?.transferUserInfo(msg)
+    }
+
+    /// Periodic in-ride snapshot (~3 s cadence). Fire-and-forget;
+    /// we don't queue durable retries because a dropped update is
+    /// fine — the next one will land and the activity catches up.
+    func sendRideUpdate(
+        distanceKm: Double,
+        durationSec: Double,
+        speedKmh: Double,
+        elevationGainM: Double,
+        heartRate: Int?,
+        userLat: Double?,
+        userLng: Double?,
+    ) {
+        var msg: [String: Any] = [
+            "kind": "rideUpdate",
+            "distanceKm": distanceKm,
+            "durationSec": durationSec,
+            "speedKmh": speedKmh,
+            "elevationGainM": elevationGainM,
+        ]
+        if let heartRate { msg["heartRate"] = heartRate }
+        if let userLat { msg["userLat"] = userLat }
+        if let userLng { msg["userLng"] = userLng }
+        send(msg)
+    }
+
+    /// Workout finished — dismiss the iPhone's Live Activity.
+    func sendRideEnded() {
+        let msg: [String: Any] = ["kind": "rideEnded"]
+        send(msg)
+        session?.transferUserInfo(msg)
+    }
+
     /// Queue a single ride file for transfer to the iPhone. Returns
     /// the WCSessionFileTransfer so callers can observe progress if
     /// they want (we don't, currently).

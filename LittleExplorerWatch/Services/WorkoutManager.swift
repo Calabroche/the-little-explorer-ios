@@ -178,7 +178,29 @@ final class WorkoutManager: NSObject {
         isActive = true
         isPaused = false
         startClock()
+        // Phase F: ping the iPhone so it can open a Live Activity on
+        // the lock screen / Dynamic Island. Carry the itinerary
+        // geometry (downsampled to ≤100 points to fit the 4KB
+        // ActivityKit budget) when this is a planned ride — the
+        // widget renders it as a route line on its mini map.
+        let polyline = downsampleRoute(activeItinerary?.geometry, max: 100)
+        sessionManager?.sendRideStarted(sportLabel: "Cyclisme", routePolyline: polyline)
         logger.notice("Workout started")
+    }
+
+    /// Stride-sample a coordinate sequence down to at most `max`
+    /// points so the encoded Live Activity payload stays well under
+    /// ActivityKit's 4 KB ContentState budget. Returns nil for a nil
+    /// input so the call-site can spread `?? nil` without ceremony.
+    private func downsampleRoute(_ coords: [Coordinate]?, max: Int) -> [[Double]]? {
+        guard let coords, !coords.isEmpty else { return nil }
+        guard coords.count > max else {
+            return coords.map { [$0.lat, $0.lng] }
+        }
+        let step = Swift.max(1, coords.count / max)
+        return Swift.stride(from: 0, to: coords.count, by: step).map { i in
+            [coords[i].lat, coords[i].lng]
+        }
     }
 
     /// Toggle pause/resume. Always flips the local `isPaused` state
@@ -241,6 +263,11 @@ final class WorkoutManager: NSObject {
         // Clear the crash-recovery snapshot — ride ended cleanly, no
         // need to surface a "Recover?" prompt at next launch.
         inProgress.clear()
+
+        // Tell the iPhone to dismiss the Live Activity. Best-effort;
+        // if the phone wasn't reachable a transferUserInfo retry
+        // catches up (see WatchSessionManager.sendRideEnded).
+        sessionManager?.sendRideEnded()
 
         // Reset state so the StartView is ready for another ride.
         // Done unconditionally so the user is always returned to home.
@@ -316,6 +343,7 @@ final class WorkoutManager: NSObject {
         clockTask?.cancel()
         clockTask = Task { [weak self] in
             var ticksSinceSnapshot = 0
+            var ticksSinceLiveUpdate = 0
             while !Task.isCancelled {
                 try? await Task.sleep(for: .seconds(1))
                 guard let self else { return }
@@ -330,8 +358,33 @@ final class WorkoutManager: NSObject {
                     self.persistSnapshot()
                     ticksSinceSnapshot = 0
                 }
+                // Live Activity push every 3 ticks (~3 s). 1 Hz is
+                // faster than the lock screen redraws anyway and
+                // would waste battery; 3 s is fast enough that the
+                // rider's glance always sees a recent number.
+                ticksSinceLiveUpdate += 1
+                if ticksSinceLiveUpdate >= 3 {
+                    self.sendLiveActivityUpdate()
+                    ticksSinceLiveUpdate = 0
+                }
             }
         }
+    }
+
+    /// Snapshot current ride state and ship it to the iPhone for the
+    /// Live Activity. Cheap — just packs ~7 numbers into a dict and
+    /// hands it to WCSession.sendMessage. No-op when there's no
+    /// session manager wired (e.g. unit tests).
+    private func sendLiveActivityUpdate() {
+        sessionManager?.sendRideUpdate(
+            distanceKm:     distanceMeters / 1000,
+            durationSec:    elapsed,
+            speedKmh:       speedKmh,
+            elevationGainM: elevationGain,
+            heartRate:      heartRate,
+            userLat:        latestCoordinate?.latitude,
+            userLng:        latestCoordinate?.longitude,
+        )
     }
 
     /// Convert the current in-memory buffer into an InProgressSnapshot

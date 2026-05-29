@@ -2,13 +2,26 @@ import SwiftUI
 
 struct WatchRootView: View {
     @Environment(WorkoutManager.self) private var workoutManager
+    /// A start action waiting for the 3-2-1 countdown to finish. When
+    /// non-nil the CountdownView takes over the screen; when the
+    /// countdown finishes it calls the closure and clears itself.
+    /// Lives at the root so both the freeform "Start ride" button AND
+    /// the itinerary picker go through the same countdown gate.
+    @State private var pendingStart: (() async -> Void)?
 
     var body: some View {
         NavigationStack {
-            if workoutManager.isActive {
+            if let pendingStart {
+                CountdownView {
+                    await pendingStart()
+                    self.pendingStart = nil
+                }
+            } else if workoutManager.isActive {
                 RideView()
             } else {
-                StartView()
+                StartView(onStart: { action in
+                    pendingStart = action
+                })
             }
         }
     }
@@ -24,6 +37,10 @@ private struct StartView: View {
     @Environment(WorkoutManager.self) private var workoutManager
     @Environment(PendingRideStore.self) private var pending
     @Environment(ItineraryCache.self) private var itineraries
+    /// Hand a closure up to WatchRootView. The root holds the
+    /// `pendingStart` state, swaps to the countdown view, then
+    /// invokes the closure when the countdown ends.
+    let onStart: (@escaping () async -> Void) -> Void
 
     var body: some View {
         ScrollView {
@@ -35,7 +52,9 @@ private struct StartView: View {
                     .font(.headline)
 
                 Button {
-                    Task { await workoutManager.start() }
+                    onStart {
+                        await workoutManager.start()
+                    }
                 } label: {
                     Label("Start ride", systemImage: "play.fill")
                         .frame(maxWidth: .infinity)
@@ -44,7 +63,7 @@ private struct StartView: View {
 
                 if !itineraries.items.isEmpty {
                     NavigationLink {
-                        ItineraryPickerView()
+                        ItineraryPickerView(onStart: onStart)
                     } label: {
                         Label(
                             "Itinéraires (\(itineraries.items.count))",
@@ -79,6 +98,10 @@ private struct ItineraryPickerView: View {
     @Environment(ItineraryCache.self) private var cache
     @Environment(WorkoutManager.self) private var workoutManager
     @Environment(\.dismiss) private var dismiss
+    /// Pipe the countdown gate up to WatchRootView same as the
+    /// freeform start button does — itinerary rides deserve the
+    /// same 3-2-1 ready-yourself beat as a manual start.
+    let onStart: (@escaping () async -> Void) -> Void
 
     var body: some View {
         List {
@@ -91,12 +114,11 @@ private struct ItineraryPickerView: View {
             } else {
                 ForEach(cache.items) { itinerary in
                     Button {
-                        // Start with the chosen itinerary so the
-                        // resulting PendingRide carries its id and the
-                        // backend later knows which route was followed.
-                        Task {
+                        // Pop the picker first so the countdown shows
+                        // on the root, not stacked on a List.
+                        dismiss()
+                        onStart {
                             await workoutManager.start(itinerary: itinerary)
-                            dismiss()
                         }
                     } label: {
                         VStack(alignment: .leading, spacing: 4) {

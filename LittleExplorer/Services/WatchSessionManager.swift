@@ -34,6 +34,10 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
     /// Callback the env wires to `activityStore.refreshLocal(user:)`
     /// so the feed re-reads from the store after a Watch ride lands.
     private var onRideIngested: (@MainActor (Int) -> Void)?
+    /// Live Activity manager — mirrors Watch ride state onto the
+    /// iPhone's lock screen + Dynamic Island. Optional because it's
+    /// wired during env build; nil before attach() runs.
+    private weak var activityManager: RideActivityManager?
 
     override init() {
         self.session = WCSession.isSupported() ? WCSession.default : nil
@@ -45,10 +49,11 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
 
     /// Wire the ingestion targets after env construction. Idempotent
     /// — calling it twice just replaces the references.
-    func attach(localStore: LocalRideStore, api: APIClient, itineraries: ItineraryStore, onRideIngested: @MainActor @escaping (Int) -> Void) {
+    func attach(localStore: LocalRideStore, api: APIClient, itineraries: ItineraryStore, activityManager: RideActivityManager, onRideIngested: @MainActor @escaping (Int) -> Void) {
         self.localStore = localStore
         self.api = api
         self.itineraries = itineraries
+        self.activityManager = activityManager
         self.onRideIngested = onRideIngested
         // Push the current itinerary library to the Watch on attach.
         // Subsequent saves trigger pushes via `syncItinerariesToWatch`.
@@ -108,7 +113,53 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
     }
 
     func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
-        Task { @MainActor in self.lastIncomingMessage = message }
+        Task { @MainActor in
+            self.lastIncomingMessage = message
+            await self.handleRideLifecycle(message)
+        }
+    }
+
+    /// Same dispatch as `didReceiveMessage`, but for messages that
+    /// arrive via the durable `transferUserInfo` channel. We use
+    /// this for rideStarted / rideEnded so the iPhone catches up
+    /// even if it was unreachable at the moment the watch fired.
+    func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any] = [:]) {
+        Task { @MainActor in
+            await self.handleRideLifecycle(userInfo)
+        }
+    }
+
+    /// Dispatch a "kind"-tagged WC payload from the Watch onto the
+    /// iPhone's Live Activity manager. Tolerates missing fields —
+    /// we want the activity to surface even with partial state.
+    @MainActor
+    private func handleRideLifecycle(_ payload: [String: Any]) async {
+        guard let kind = payload["kind"] as? String,
+              let activityManager else { return }
+        switch kind {
+        case "rideStarted":
+            let sportLabel = payload["sportLabel"] as? String ?? "Cyclisme"
+            let routePolyline = payload["routePolyline"] as? [[Double]]
+            await activityManager.start(sportLabel: sportLabel, routePolyline: routePolyline)
+        case "rideUpdate":
+            let state = RideActivityAttributes.RideState(
+                distanceKm:           payload["distanceKm"]     as? Double ?? 0,
+                durationSec:          payload["durationSec"]    as? Double ?? 0,
+                speedKmh:             payload["speedKmh"]       as? Double ?? 0,
+                elevationGainM:       payload["elevationGainM"] as? Double ?? 0,
+                heartRate:            payload["heartRate"]      as? Int,
+                nextManeuver:         nil,
+                nextManeuverDistanceM: nil,
+                nextManeuverSymbol:   nil,
+                userLat:              payload["userLat"]        as? Double,
+                userLng:              payload["userLng"]        as? Double,
+            )
+            await activityManager.update(state)
+        case "rideEnded":
+            await activityManager.end()
+        default:
+            break
+        }
     }
 
     /// Called by the OS when a file arrives from the Watch. The
