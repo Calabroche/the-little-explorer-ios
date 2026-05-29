@@ -144,8 +144,13 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
     /// we want the activity to surface even with partial state.
     @MainActor
     private func handleRideLifecycle(_ payload: [String: Any]) async {
+        let kind = payload["kind"] as? String ?? "(no kind)"
+        Log.watch.notice("handleRideLifecycle received kind=\(kind, privacy: .public), activityManager=\(self.activityManager == nil ? "NIL" : "set", privacy: .public)")
         guard let kind = payload["kind"] as? String,
-              let activityManager else { return }
+              let activityManager else {
+            Log.watch.error("handleRideLifecycle dropped — missing kind or activityManager")
+            return
+        }
         switch kind {
         case "rideStarted":
             let sportLabel = payload["sportLabel"] as? String ?? "Cyclisme"

@@ -17,7 +17,12 @@ final class RideActivityManager {
     }
 
     func start(sportLabel: String, routePolyline: [[Double]]? = nil) async {
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        let auth = ActivityAuthorizationInfo()
+        guard auth.areActivitiesEnabled else {
+            Log.tracking.error("LiveActivity start ABORTED — areActivitiesEnabled=false. Check Réglages → Face ID → Activités en direct.")
+            return
+        }
+        Log.tracking.notice("LiveActivity start: areActivitiesEnabled=true, sportLabel=\(sportLabel, privacy: .public), polylinePoints=\(routePolyline?.count ?? 0)")
         let attributes = RideActivityAttributes(
             sportLabel: sportLabel,
             startedAt: .now,
@@ -41,8 +46,9 @@ final class RideActivityManager {
                 content: .init(state: initial, staleDate: nil),
                 pushType: nil,
             )
+            Log.tracking.notice("LiveActivity request succeeded — id=\(self.current?.id ?? "?", privacy: .public)")
         } catch {
-            Log.tracking.error("Failed to start Live Activity: \(error.localizedDescription, privacy: .public)")
+            Log.tracking.error("LiveActivity request FAILED: \(error.localizedDescription, privacy: .public)")
         }
     }
 
