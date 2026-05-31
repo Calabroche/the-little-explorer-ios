@@ -37,6 +37,15 @@ enum ClimbDetector {
         var minDistanceM: Double  = 500    // 500 m minimum
         var minElevationM: Double = 30     // 30 m gain
         var minAvgGradePct: Double = 3     // 3 % avg grade
+        /// Upper sanity cap. Even the world's worst road climbs
+        /// (Mauna Kea, Mortirolo, Angliru) average ≤ 13 % over their
+        /// full length. A "climb" averaging more than 15 % almost
+        /// always means GPS-altitude corruption (signal lost under a
+        /// tunnel / dense canopy, watch reporting altitude = 0 for a
+        /// stretch, then jumping back to the real value). Rejecting
+        /// it here is more honest than letting it pollute the
+        /// detected-climbs list with a phantom Mortirolo.
+        var maxAvgGradePct: Double = 15
         /// Stop the climb when we see this much of a downhill (rolling
         /// 100 m). Lets the algo handle false plateaus / brief descents.
         var maxNetDescentDuringClimb: Double = 8
@@ -52,10 +61,19 @@ enum ClimbDetector {
               altitude.count == distanceM.count,
               altitude.count > 1 else { return [] }
 
-        // Smooth the altitude stream with a 30-sample window to
-        // suppress GPS noise — raw 1Hz altitude bounces ±3 m which
-        // would otherwise fragment a single climb into 20 micro-climbs.
-        let smoothed = smoothAltitude(altitude, window: 30)
+        // STEP 1 — outlier rejection.
+        // Without this, a single sample of `altitude = 0` (the watch
+        // briefly loses vertical lock under a railway tunnel, dense
+        // forest, etc.) survives the moving average smoothing as a
+        // 200-300 m altitude dip. The dip generates a phantom climb
+        // on the recovery side that averages 25-30 % grade. Clean
+        // BEFORE smoothing so the average isn't polluted.
+        let cleaned = cleanAltitudeOutliers(altitude)
+        // STEP 2 — smooth the cleaned altitude stream with a 30-sample
+        // window to suppress GPS noise. Raw 1Hz altitude bounces ±3 m
+        // which would otherwise fragment a single climb into 20
+        // micro-climbs.
+        let smoothed = smoothAltitude(cleaned, window: 30)
 
         var climbs: [Climb] = []
         var i = 0
@@ -96,7 +114,8 @@ enum ClimbDetector {
             if elev >= thresholds.minElevationM,
                dist >= thresholds.minDistanceM {
                 let avg = (elev / max(dist, 1)) * 100
-                if avg >= thresholds.minAvgGradePct {
+                if avg >= thresholds.minAvgGradePct,
+                   avg <= thresholds.maxAvgGradePct {
                     let maxGrade = peakSustainedGrade(
                         from: start, to: end,
                         smoothed: smoothed, distanceM: distanceM,
@@ -125,6 +144,63 @@ enum ClimbDetector {
     }
 
     // MARK: - Smoothing + helpers
+
+    /// Replace clearly-corrupt altitude samples with a linear
+    /// interpolation between their valid neighbors. Two checks:
+    ///   1. `altitude == 0` — the sentinel a GPS chipset writes when
+    ///      it has horizontal lock but no vertical fix. Real road
+    ///      cycling samples are essentially never exactly zero.
+    ///   2. Single-sample spikes — a value that differs from BOTH
+    ///      its neighbors by > 30 m. 30 m/sec vertical would mean
+    ///      a 108 km/h vertical descent, which is physically out of
+    ///      reach for a bike. Anything past it is GPS noise.
+    /// Runs of invalid samples are interpolated linearly between
+    /// the last valid sample before and the first valid sample
+    /// after. Leading / trailing invalid runs are filled with the
+    /// nearest valid value.
+    private static func cleanAltitudeOutliers(_ alt: [Double]) -> [Double] {
+        let n = alt.count
+        guard n >= 3 else { return alt }
+
+        // Build the validity mask.
+        var valid = Array(repeating: true, count: n)
+        for i in 0..<n where alt[i] == 0 { valid[i] = false }
+        // Spike check on positions still considered valid.
+        for i in 1..<(n - 1) where valid[i] {
+            let prev = alt[i - 1]
+            let next = alt[i + 1]
+            if abs(alt[i] - prev) > 30 && abs(alt[i] - next) > 30 {
+                valid[i] = false
+            }
+        }
+
+        // Interpolate invalid runs.
+        var out = alt
+        var i = 0
+        while i < n {
+            if valid[i] { i += 1; continue }
+            let runStart = i
+            while i < n && !valid[i] { i += 1 }
+            let runEnd = i  // exclusive
+            let before: Double? = runStart > 0 ? out[runStart - 1] : nil
+            let after:  Double? = runEnd  < n ? out[runEnd]     : nil
+            switch (before, after) {
+            case let (b?, a?):
+                let span = Double(runEnd - runStart + 1)
+                for k in runStart..<runEnd {
+                    let t = Double(k - runStart + 1) / span
+                    out[k] = b + (a - b) * t
+                }
+            case let (b?, nil):
+                for k in runStart..<runEnd { out[k] = b }
+            case let (nil, a?):
+                for k in runStart..<runEnd { out[k] = a }
+            case (nil, nil):
+                break  // whole series invalid, leave alone
+            }
+        }
+        return out
+    }
 
     /// Centered moving average. Returns an array the same length as the
     /// input.
