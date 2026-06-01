@@ -305,6 +305,72 @@ actor APIClient {
         }
     }
 
+    // MARK: - Carnet d'entretien
+
+    /// GET /api/service-events?gear_id=<id> — returns the user's
+    /// maintenance log scoped to one bike, plus a server-computed
+    /// "next due" snapshot per kind. Same shape iOS + web consume.
+    func fetchServiceEvents(gearId: String) async throws -> ServiceEventResponse {
+        try await get("/api/service-events?gear_id=\(gearId)")
+    }
+
+    /// POST /api/service-events — log one maintenance event. Server
+    /// defaults `km_at_event` to the bike's current total if we omit
+    /// it; we always pass it explicitly so the entry survives a
+    /// later Strava-sync (which changes the "current km" out from
+    /// under us).
+    func addServiceEvent(
+        gearId: String,
+        kind: ServiceKind,
+        date: Date,
+        kmAtEvent: Double?,
+        notes: String?,
+    ) async throws {
+        let url = baseURL.appendingPathComponent("/api/service-events")
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token = authToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        var body: [String: Any] = [
+            "gear_id": gearId,
+            "kind":    kind.rawValue,
+            "date":    ISO8601DateFormatter.dateOnly.string(from: date),
+        ]
+        if let kmAtEvent { body["km_at_event"] = kmAtEvent }
+        if let notes, !notes.isEmpty { body["notes"] = notes }
+        request.httpBody = try JSONSerialization.data(withJSONObject: body)
+        let (data, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse {
+            if (200..<300).contains(http.statusCode) { return }
+            if http.statusCode == 401 { throw APIError.unauthorized }
+            let preview = String(data: data.prefix(200), encoding: .utf8) ?? ""
+            Log.api.error("POST /api/service-events \(http.statusCode) · \(preview, privacy: .public)")
+            throw APIError.http(http.statusCode)
+        }
+    }
+
+    /// DELETE /api/service-events — wipe a logged event by id.
+    func deleteServiceEvent(id: String) async throws {
+        let url = baseURL.appendingPathComponent("/api/service-events")
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token = authToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["id": id])
+        let (data, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse {
+            if (200..<300).contains(http.statusCode) { return }
+            if http.statusCode == 401 { throw APIError.unauthorized }
+            let preview = String(data: data.prefix(200), encoding: .utf8) ?? ""
+            Log.api.error("DELETE /api/service-events \(http.statusCode) · \(preview, privacy: .public)")
+            throw APIError.http(http.statusCode)
+        }
+    }
+
     // MARK: - Admin
 
     struct AdminUser: Decodable, Sendable, Identifiable {

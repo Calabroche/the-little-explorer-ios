@@ -20,19 +20,43 @@ struct BikeEquipmentView: View {
     @State private var error: String?
     @State private var pendingAction: BikeEquipment?
     @State private var pendingActionType: PendingAction = .replace
+    /// Which sub-tab of the Matériel screen is showing. Mirrors the
+    /// web's two-tab toggle on /equipement: wear tracker vs the
+    /// maintenance log (carnet d'entretien).
+    @State private var selectedTab: Tab = .wear
 
     enum PendingAction { case replace, delete }
+    enum Tab: String, CaseIterable, Identifiable {
+        case wear, service
+        var id: Self { self }
+        var label: String {
+            switch self {
+            case .wear:    return "Pièces d'usure"
+            case .service: return "Carnet d'entretien"
+            }
+        }
+    }
 
     var body: some View {
-        Group {
-            if loading && items.isEmpty {
-                ProgressView("Chargement…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(AppColors.cream)
-            } else if items.isEmpty {
-                emptyState
-            } else {
-                listView
+        VStack(spacing: 0) {
+            Picker("Vue", selection: $selectedTab) {
+                ForEach(Tab.allCases) { tab in
+                    Text(tab.label).tag(tab)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.horizontal, 12)
+            .padding(.top, 8)
+            .padding(.bottom, 4)
+
+            switch selectedTab {
+            case .wear:
+                wearTab
+            case .service:
+                // The carnet is its own view — give it the bike list
+                // we already loaded so it doesn't re-fetch the
+                // equipment endpoint just to pick a default bike.
+                ServiceLogView(bikes: bikes)
             }
         }
         .background(AppColors.cream.ignoresSafeArea())
@@ -61,6 +85,21 @@ struct BikeEquipmentView: View {
             if let p = pendingAction {
                 Text("« \(p.name) » sera effacée. Action irréversible.")
             }
+        }
+    }
+
+    /// Same view content as before, but extracted so the segmented
+    /// tab can swap it out for the carnet without unmounting the
+    /// whole NavigationLink.
+    @ViewBuilder
+    private var wearTab: some View {
+        if loading && items.isEmpty {
+            ProgressView("Chargement…")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        } else if items.isEmpty {
+            emptyState
+        } else {
+            listView
         }
     }
 
