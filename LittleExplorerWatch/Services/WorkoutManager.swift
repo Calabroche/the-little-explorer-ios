@@ -140,17 +140,34 @@ final class WorkoutManager: NSObject {
         // against. Skips silently when steps is nil (older itineraries
         // without OSRM step data).
         navigation.setItinerary(itinerary)
-        await start()
+        await start(sport: WatchSport.defaultForItinerary)
     }
 
+    /// Stored so end() can stamp the correct sport string on the
+    /// resulting PendingRide. Defaults to cyclingOutdoor for callers
+    /// that haven't migrated to the sport-picker UI yet.
+    private var activeSport: WatchSport = .cyclingOutdoor
+
+    /// Legacy entry-point retained for the few callers (crash
+    /// recovery, …) that pre-date the sport picker. New flows
+    /// should pass an explicit `sport:`.
     func start() async {
+        await start(sport: .cyclingOutdoor)
+    }
+
+    /// Start a workout with the chosen sport. Configures HealthKit
+    /// (activityType + indoor/outdoor) from the sport's meta and
+    /// stamps the sport on the resulting PendingRide so the iPhone
+    /// sync routes it to the correct TLE bucket.
+    func start(sport: WatchSport) async {
         guard !isActive else { return }
+        activeSport = sport
         await requestHealthKit()
         await ensureLocationAuthorization()
 
         let configuration = HKWorkoutConfiguration()
-        configuration.activityType = .cycling
-        configuration.locationType = .outdoor
+        configuration.activityType = sport.meta.hk
+        configuration.locationType = sport.meta.location
 
         do {
             session = try HKWorkoutSession(healthStore: healthStore, configuration: configuration)
