@@ -948,13 +948,17 @@ struct ActivityDetailView: View {
         }
     }
 
-    // MARK: - Summary cards row (VO2 + Power estimate)
+    // MARK: - Summary cards row (Power estimate)
 
+    /// VO2 max card removed from per-activity view (2026-06): the
+    /// estimate is a function of FC max / FC repos — both
+    /// athlete-level values, so it doesn't vary ride-to-ride.
+    /// Repeating it on every detail page added noise without
+    /// adding signal. The aggregate VO2 estimate now lives on
+    /// the Bilan / Wrapped page where it makes sense as a
+    /// "how am I as an athlete" metric.
     private var summaryRow: some View {
         VStack(spacing: 14) {
-            if activity.maxHr != nil {
-                Vo2MaxCard(activity: activity)
-            }
             if hasPower {
                 PowerSummaryCard(activity: activity, chartData: chartData)
             }
