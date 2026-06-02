@@ -377,16 +377,17 @@ actor APIClient {
         let id: String
         let email: String?
         let name: String?
+        let image: String?
         let athleteId: Int?
         let activityCount: Int?
         let providers: [String]?
         let createdAt: String?
 
         enum CodingKeys: String, CodingKey {
-            case id, email, name, providers
-            case athleteId      = "athlete_id"
-            case activityCount  = "activity_count"
-            case createdAt      = "created_at"
+            case id, email, name, image, providers
+            case athleteId      = "athleteId"
+            case activityCount  = "activities"
+            case createdAt      = "createdAt"
         }
     }
 
@@ -395,6 +396,141 @@ actor APIClient {
     func adminUsers() async throws -> [AdminUser] {
         let response: AdminUsersResponse = try await get("/api/admin/users")
         return response.users
+    }
+
+    /// Hard-delete a user (cascades to all their data). Mirrors the web
+    /// admin's "✗ Supprimer". Server enforces the same allowlist + the
+    /// "can't delete yourself" guard.
+    @discardableResult
+    func adminDeleteUser(id: String) async throws -> Bool {
+        struct Resp: Decodable, Sendable { let ok: Bool? }
+        let url = baseURL.appendingPathComponent("/api/admin/users")
+        var request = URLRequest(url: url)
+        request.httpMethod = "DELETE"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(["id": id])
+        let resp: Resp = try await execute(request)
+        return resp.ok ?? true
+    }
+
+    /// Decodable mirror of GET /api/admin/metrics (the web /admin/metrics
+    /// dashboard data). Field names map the snake_case JSON via CodingKeys
+    /// since the shared decoder doesn't apply convertFromSnakeCase.
+    struct AdminMetrics: Decodable, Sendable {
+        struct Totals: Decodable, Sendable {
+            let users: Int
+            let activities: Int
+            let events7d: Int
+            let signups7d: Int
+            let exportsTotal: Int
+            let dauToday: Int
+            enum CodingKeys: String, CodingKey {
+                case users, activities
+                case events7d     = "events_7d"
+                case signups7d    = "signups_7d"
+                case exportsTotal = "exports_total"
+                case dauToday     = "dau_today"
+            }
+        }
+        struct DauPoint: Decodable, Sendable, Identifiable {
+            let day: String
+            let count: Int
+            var id: String { day }
+        }
+        struct Funnel: Decodable, Sendable {
+            let signup: Int
+            let welcomeDone: Int
+            let sportDone: Int
+            let profileDone: Int
+            let stravaConnected: Int
+            let stravaSkipped: Int
+            let complete: Int
+            enum CodingKeys: String, CodingKey {
+                case signup, complete
+                case welcomeDone     = "welcome_done"
+                case sportDone       = "sport_done"
+                case profileDone     = "profile_done"
+                case stravaConnected = "strava_connected"
+                case stravaSkipped   = "strava_skipped"
+            }
+        }
+        struct EventCount: Decodable, Sendable, Identifiable {
+            let type: String
+            let count: Int
+            var id: String { type }
+        }
+        struct Sync: Decodable, Sendable {
+            let received7d: Int
+            let synced7d: Int
+            let successRate: Double
+            enum CodingKeys: String, CodingKey {
+                case received7d  = "received_7d"
+                case synced7d    = "synced_7d"
+                case successRate = "success_rate"
+            }
+        }
+        struct RecentEvent: Decodable, Sendable, Identifiable {
+            let type: String
+            let userId: String?
+            let userName: String?
+            let occurredAt: String
+            let properties: JSONValue?
+            let id = UUID()
+            enum CodingKeys: String, CodingKey {
+                case type, userName, properties
+                case userId     = "user_id"
+                case occurredAt = "occurred_at"
+            }
+        }
+        /// Minimal arbitrary-JSON value so we can show event `properties`
+        /// (a free-form object) without modelling every event's shape.
+        enum JSONValue: Decodable, Sendable {
+            case string(String), number(Double), bool(Bool)
+            case object([String: JSONValue]), array([JSONValue]), null
+
+            init(from decoder: Decoder) throws {
+                let c = try decoder.singleValueContainer()
+                if c.decodeNil() { self = .null; return }
+                if let b = try? c.decode(Bool.self)   { self = .bool(b); return }
+                if let n = try? c.decode(Double.self) { self = .number(n); return }
+                if let s = try? c.decode(String.self) { self = .string(s); return }
+                if let o = try? c.decode([String: JSONValue].self) { self = .object(o); return }
+                if let a = try? c.decode([JSONValue].self)         { self = .array(a); return }
+                self = .null
+            }
+
+            /// Compact one-line rendering for the activity tail's detail column.
+            var display: String {
+                switch self {
+                case .string(let s): return s
+                case .bool(let b):   return b ? "true" : "false"
+                case .number(let n): return n == n.rounded() ? String(Int(n)) : String(n)
+                case .null:          return "null"
+                case .array(let a):  return "[" + a.map(\.display).joined(separator: ", ") + "]"
+                case .object(let o): return o.map { "\($0.key): \($0.value.display)" }.sorted().joined(separator: ", ")
+                }
+            }
+
+            var isEmpty: Bool {
+                switch self {
+                case .object(let o): return o.isEmpty
+                case .array(let a):  return a.isEmpty
+                case .null:          return true
+                default:             return false
+                }
+            }
+        }
+
+        let totals: Totals
+        let dau: [DauPoint]
+        let funnel: Funnel
+        let events: [EventCount]
+        let sync: Sync
+        let recent: [RecentEvent]
+    }
+
+    func adminMetrics() async throws -> AdminMetrics {
+        try await get("/api/admin/metrics")
     }
 
     // MARK: - Strava manual sync
