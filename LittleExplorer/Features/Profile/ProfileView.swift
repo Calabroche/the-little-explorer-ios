@@ -40,6 +40,7 @@ struct ProfileView: View {
                 case .diagnostics:      DiagnosticsView()
                 case .bluetoothSensors: BluetoothSensorsView()
                 case .bikeEquipment:    BikeEquipmentView()
+                case .guide:            GuideView()
                 }
             }
         }
@@ -86,6 +87,11 @@ struct ProfileView: View {
 
                 NavigationLink(value: ProfileRoute.settings) {
                     actionRow(symbol: "gearshape", text: "Paramètres", chevron: true)
+                }
+                .buttonStyle(.plain)
+
+                NavigationLink(value: ProfileRoute.guide) {
+                    actionRow(symbol: "book.closed", text: "Guide d'utilisation", chevron: true)
                 }
                 .buttonStyle(.plain)
 
@@ -399,7 +405,7 @@ struct ProfileView: View {
 }
 
 enum ProfileRoute: Hashable {
-    case settings, admin, diagnostics, bluetoothSensors, bikeEquipment
+    case settings, admin, diagnostics, bluetoothSensors, bikeEquipment, guide
 }
 
 // MARK: - Theme segmented control
