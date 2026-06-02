@@ -17,6 +17,18 @@ final class AppEnvironment {
         set { UserDefaults.standard.set(newValue, forKey: "tle.healthKitEnabled") }
     }
 
+    /// Whether the one-time welcome screen has been shown. Flipped true
+    /// the first time a signed-in user dismisses WelcomeView with
+    /// "Commencer". RootView reads this imperatively (in onAppear) to
+    /// decide whether to present the welcome over the tab bar, so a
+    /// brand-new user lands on a greeting + "what you can do" the first
+    /// time they open the app signed-in — mirroring the web's onboarding
+    /// Step 0. Per-device (UserDefaults), not per-account.
+    var hasSeenWelcome: Bool {
+        get { UserDefaults.standard.bool(forKey: "tle.hasSeenWelcome") }
+        set { UserDefaults.standard.set(newValue, forKey: "tle.hasSeenWelcome") }
+    }
+
     let api = APIClient.shared
     let location = LocationManager()
     let watch = WatchSessionManager()

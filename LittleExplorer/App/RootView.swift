@@ -9,6 +9,9 @@ import SwiftUI
 struct RootView: View {
     @Environment(AppEnvironment.self) private var environment
     @State private var router = AppRouter()
+    /// Drives the one-time welcome cover. Set true on first appearance of
+    /// the authenticated UI when `hasSeenWelcome` is still false.
+    @State private var showWelcome = false
 
     var body: some View {
         Group {
@@ -71,6 +74,19 @@ struct RootView: View {
                 .tag(AppTab.profile)
         }
         .environment(router)
+        // First time a signed-in user reaches the tab bar, greet them
+        // with the welcome screen (+ link to the full guide). Read the
+        // persisted flag imperatively here; the cover itself is driven by
+        // local @State so it dismisses cleanly on "Commencer".
+        .onAppear {
+            if !environment.hasSeenWelcome { showWelcome = true }
+        }
+        .fullScreenCover(isPresented: $showWelcome) {
+            WelcomeView {
+                environment.hasSeenWelcome = true
+                showWelcome = false
+            }
+        }
     }
 }
 
