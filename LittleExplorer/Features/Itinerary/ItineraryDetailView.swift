@@ -277,7 +277,12 @@ struct ItineraryDetailView: View {
         analysisFailed = false
         defer { analysisLoading = false }
         do {
-            let result = try await environment.api.routeWays(waypoints: itinerary.waypoints.map(\.coordinate))
+            // Close the loop the same way the builder does (effectiveWaypoints),
+            // otherwise route-ways routes one-way (A→B) and the way-type /
+            // surface totals only cover ~half a loop route.
+            var pts = itinerary.waypoints.map(\.coordinate)
+            if itinerary.loop, pts.count >= 2 { pts.append(pts[0]) }
+            let result = try await environment.api.routeWays(waypoints: pts)
             await MainActor.run { analysis = result }
         } catch {
             await MainActor.run { analysisFailed = true }
