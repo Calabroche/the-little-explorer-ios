@@ -38,10 +38,14 @@ fi
 xcodegen generate
 
 # ── Simulator install ──────────────────────────────────────────────────
+# `|| true` so a no-match grep (no booted simulator) doesn't abort the
+# whole script under `set -e -o pipefail` — without it the script died
+# here silently, before it could even print "no booted simulator", and
+# the device-install path below never ran.
 SIM_ID=$("$XCRUN" simctl list devices booted \
     | grep -E "iPhone|iPad" \
     | head -n 1 \
-    | sed -E 's/.*\(([0-9A-F-]+)\).*/\1/')
+    | sed -E 's/.*\(([0-9A-F-]+)\).*/\1/' || true)
 
 if [ -n "${SIM_ID:-}" ]; then
     echo "▶︎ Booted simulator: $SIM_ID"
