@@ -48,6 +48,33 @@ final class PlannerState {
         scheduleRouteRefresh()
     }
 
+    // MARK: - Click-to-add a precise map point
+
+    /// Best-effort reverse geocode used by the map's "add this point?"
+    /// confirmation to name the tapped spot (street / commune).
+    func reverseLookup(lat: Double, lng: Double) async -> CommuneResult? {
+        try? await api.reverseGeocode(lat: lat, lng: lng).first
+    }
+
+    /// Append a point tapped on the map to the end of the route. Keeps the
+    /// EXACT tapped coordinates (so the route passes precisely there) and
+    /// mints a unique synthetic `code` (`pt:lat,lng`) so several points in
+    /// the same commune don't collide with the INSEE-code dedup.
+    func addPrecisePoint(lat: Double, lng: Double, from result: CommuneResult?) {
+        let wp = Waypoint(
+            name: result?.name ?? String(format: "%.4f, %.4f", lat, lng),
+            code: String(format: "pt:%.5f,%.5f", lat, lng),
+            postal: result?.postal,
+            lat: lat,
+            lng: lng,
+            label: result?.label,
+            city: nil,
+            kind: result?.kind.flatMap(Waypoint.PlaceKind.init(rawValue:)) ?? .locality,
+        )
+        waypoints.append(wp)
+        scheduleRouteRefresh()
+    }
+
     func remove(at index: Int) {
         guard waypoints.indices.contains(index) else { return }
         waypoints.remove(at: index)

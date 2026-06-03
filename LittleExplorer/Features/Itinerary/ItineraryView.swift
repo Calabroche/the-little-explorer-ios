@@ -33,6 +33,12 @@ struct ItineraryView: View {
     @State private var pendingDetailAfterLibrary: Itinerary?
     @State private var showImporter = false
     @State private var importError: String?
+    // Click-to-add: tapping the full-screen map drops a pending point and
+    // opens a confirmation card. `pendingResult` is the reverse-geocoded
+    // name shown while the user decides; confirming appends it to the route.
+    @State private var pendingTap: CLLocationCoordinate2D?
+    @State private var pendingResult: CommuneResult?
+    @State private var pendingLoading = false
 
     var body: some View {
         @Bindable var planner = planner
@@ -147,7 +153,7 @@ struct ItineraryView: View {
             .fullScreenCover(item: $navigatingItinerary) { itinerary in
                 NavigateView(itinerary: itinerary)
             }
-            .fullScreenCover(isPresented: $showFullMap) {
+            .fullScreenCover(isPresented: $showFullMap, onDismiss: { clearPendingTap() }) {
                 fullMapView(planner: planner)
             }
             .sheet(item: $detailItinerary, onDismiss: {
@@ -195,9 +201,17 @@ struct ItineraryView: View {
             MapPolyline(coordinates: geometry.map(\.clLocation))
                 .stroke(AppColors.terra, lineWidth: 4)
         }
+        // Minimalist stop markers — small dots instead of big labelled pins
+        // so a route with many points stays readable. The ordered list below
+        // the map carries the names.
         ForEach(Array(planner.waypoints.enumerated()), id: \.offset) { index, waypoint in
-            Marker("\(index + 1)", coordinate: waypoint.coordinate.clLocation)
-                .tint(AppColors.terra)
+            Annotation("", coordinate: waypoint.coordinate.clLocation) {
+                Circle()
+                    .fill(AppColors.terra)
+                    .frame(width: 10, height: 10)
+                    .overlay(Circle().stroke(Color.white, lineWidth: 1.5))
+            }
+            .annotationTitles(.hidden)
         }
         // Synced marker from elevation chart drag.
         if let idx = planner.hoverIndex,
@@ -254,20 +268,47 @@ struct ItineraryView: View {
     }
 
     /// Full-screen interactive map (pan / zoom / rotate), opened from the
-    /// preview. A single Close button — nothing else in the way.
+    /// preview. Tap anywhere to drop a precise point and add it to the route.
     private func fullMapView(planner: PlannerState) -> some View {
-        ZStack(alignment: .topTrailing) {
-            Map(position: $cameraPosition) {
-                routeMapContent(planner)
+        ZStack {
+            MapReader { proxy in
+                Map(position: $cameraPosition) {
+                    routeMapContent(planner)
+                    // Pending tapped point — a green halo so the user sees
+                    // exactly where the new stop will land.
+                    if let tap = pendingTap {
+                        Annotation("", coordinate: tap) {
+                            ZStack {
+                                Circle().fill(AppColors.green.opacity(0.25)).frame(width: 30, height: 30)
+                                Circle().fill(AppColors.green).frame(width: 14, height: 14)
+                                    .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                            }
+                        }
+                        .annotationTitles(.hidden)
+                    }
+                }
+                .mapControls {
+                    MapCompass()
+                    MapScaleView()
+                }
+                .ignoresSafeArea()
+                .onTapGesture { location in
+                    guard let coord = proxy.convert(location, from: .local) else { return }
+                    pendingTap = coord
+                    pendingResult = nil
+                    pendingLoading = true
+                    Task {
+                        let hit = await planner.reverseLookup(lat: coord.latitude, lng: coord.longitude)
+                        pendingResult = hit
+                        pendingLoading = false
+                    }
+                }
             }
-            .mapControls {
-                MapCompass()
-                MapScaleView()
-            }
-            .ignoresSafeArea()
 
+            // Close button (top-trailing).
             Button {
                 showFullMap = false
+                clearPendingTap()
             } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 15, weight: .bold))
@@ -277,7 +318,79 @@ struct ItineraryView: View {
             }
             .buttonStyle(.plain)
             .padding(16)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+
+            // Hint when nothing is pending, or the confirmation card.
+            if let tap = pendingTap {
+                addPointCard(planner: planner, coord: tap)
+                    .padding(16)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+            } else {
+                Text("Touche la carte pour ajouter un point")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.white)
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .background(.black.opacity(0.55), in: Capsule())
+                    .padding(16)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
+            }
         }
+        .animation(.easeOut(duration: 0.18), value: pendingTap == nil)
+    }
+
+    /// Confirmation card for a tapped point — pinned to the bottom of the
+    /// full-screen map. Plain SwiftUI, so its buttons never interfere with
+    /// the map's own tap handling.
+    private func addPointCard(planner: PlannerState, coord: CLLocationCoordinate2D) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 10) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("AJOUTER CE POINT ?")
+                        .font(.system(size: 9).weight(.bold)).tracking(1.2)
+                        .foregroundStyle(AppColors.inkLight)
+                    if pendingLoading {
+                        Text("Localisation…")
+                            .font(.system(size: 15).weight(.semibold)).foregroundStyle(AppColors.ink)
+                    } else {
+                        Text(pendingResult?.name ?? String(format: "%.4f, %.4f", coord.latitude, coord.longitude))
+                            .font(.system(size: 15).weight(.semibold)).foregroundStyle(AppColors.ink)
+                            .lineLimit(2)
+                        if let postal = pendingResult?.postal, !postal.isEmpty {
+                            Text(postal).font(.system(size: 11)).foregroundStyle(AppColors.inkLight)
+                        }
+                    }
+                }
+                Spacer(minLength: 8)
+                Button { clearPendingTap() } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .bold)).foregroundStyle(AppColors.inkMid)
+                        .padding(8).background(AppColors.creamDark, in: Circle())
+                }
+                .buttonStyle(.plain)
+            }
+            Button {
+                planner.addPrecisePoint(lat: coord.latitude, lng: coord.longitude, from: pendingResult)
+                clearPendingTap()
+            } label: {
+                Text("+ AJOUTER AU PARCOURS")
+                    .font(.system(size: 12).weight(.bold)).tracking(1.0)
+                    .foregroundStyle(.white)
+                    .frame(maxWidth: .infinity).padding(.vertical, 12)
+                    .background(AppColors.green, in: RoundedRectangle(cornerRadius: 6))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(14)
+        .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(AppColors.creamBorder, lineWidth: 1))
+        .shadow(color: .black.opacity(0.18), radius: 14, y: 4)
+    }
+
+    private func clearPendingTap() {
+        pendingTap = nil
+        pendingResult = nil
+        pendingLoading = false
     }
 
     // MARK: - Stats row
