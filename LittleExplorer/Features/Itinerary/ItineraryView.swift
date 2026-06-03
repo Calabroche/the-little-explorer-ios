@@ -472,8 +472,9 @@ struct ItineraryView: View {
         }
     }
 
-    /// Komoot-style saved-route card: map thumbnail, difficulty badge,
-    /// title, duration / distance / D+ metrics, and date + start place.
+    /// Komoot-style saved-route card: a large map banner with the
+    /// difficulty badge overlaid, then title, duration / distance / D+
+    /// metrics, and date + start place below.
     private func libraryRow(_ itinerary: Itinerary, planner: PlannerState) -> some View {
         let isActive = planner.activeId == itinerary.id
         let diff = difficulty(for: itinerary)
@@ -482,58 +483,66 @@ struct ItineraryView: View {
             recenterMap()
             showLibrarySheet = false
         } label: {
-            HStack(spacing: 12) {
+            VStack(alignment: .leading, spacing: 0) {
+                // Map banner
                 RouteThumbnail(geometry: itinerary.geometry ?? [], waypoints: itinerary.waypoints)
-                    .frame(width: 78, height: 78)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(AppColors.creamBorder, lineWidth: 1))
-
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 6) {
+                    .frame(height: 150)
+                    .frame(maxWidth: .infinity)
+                    .clipped()
+                    .overlay(alignment: .topLeading) {
                         Text(diff.label.uppercased())
-                            .font(.system(size: 9).weight(.bold)).tracking(0.5)
+                            .font(.system(size: 10).weight(.bold)).tracking(0.6)
                             .foregroundStyle(.white)
-                            .padding(.horizontal, 7).padding(.vertical, 2)
+                            .padding(.horizontal, 9).padding(.vertical, 4)
                             .background(diff.color, in: Capsule())
+                            .padding(10)
+                    }
+                    .overlay(alignment: .topTrailing) {
                         if isActive {
                             Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 11)).foregroundStyle(AppColors.terra)
+                                .font(.system(size: 18))
+                                .foregroundStyle(AppColors.terra)
+                                .padding(5)
+                                .background(.regularMaterial, in: Circle())
+                                .padding(10)
                         }
-                        Spacer(minLength: 0)
                     }
 
-                    Text(itinerary.name)
-                        .font(.system(size: 15, design: .serif).weight(.bold))
-                        .foregroundStyle(AppColors.ink)
-                        .lineLimit(1)
+                VStack(alignment: .leading, spacing: 7) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(itinerary.name)
+                            .font(.system(size: 19, design: .serif).weight(.bold))
+                            .foregroundStyle(AppColors.ink)
+                            .lineLimit(1)
+                        Spacer(minLength: 8)
+                        Button(role: .destructive) {
+                            pendingDeleteId = itinerary.id
+                        } label: {
+                            Image(systemName: "trash")
+                                .font(.system(size: 15))
+                                .foregroundStyle(.red.opacity(0.7))
+                        }
+                        .buttonStyle(.plain)
+                    }
 
-                    HStack(spacing: 10) {
+                    HStack(spacing: 16) {
                         if let min = itinerary.durationMin { metric("clock", formatDur(min)) }
                         if let km = itinerary.distanceKm { metric("ruler", String(format: "%.1f km", km)) }
                         if let asc = itinerary.totalAscent { metric("arrow.up.right", "\(asc) m") }
+                        Spacer(minLength: 0)
                     }
 
                     Text(subtitle(for: itinerary))
-                        .font(.system(size: 10))
+                        .font(.system(size: 12))
                         .foregroundStyle(AppColors.inkLight)
                         .lineLimit(1)
                 }
-
-                Button(role: .destructive) {
-                    pendingDeleteId = itinerary.id
-                } label: {
-                    Image(systemName: "trash")
-                        .font(.system(size: 13))
-                        .foregroundStyle(.red.opacity(0.7))
-                        .frame(width: 30, height: 30)
-                }
-                .buttonStyle(.plain)
+                .padding(14)
             }
-            .padding(10)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 10))
+            .background(AppColors.surface)
+            .clipShape(RoundedRectangle(cornerRadius: 14))
             .overlay(
-                RoundedRectangle(cornerRadius: 10)
+                RoundedRectangle(cornerRadius: 14)
                     .stroke(isActive ? AppColors.terra : AppColors.creamBorder, lineWidth: isActive ? 1.5 : 1),
             )
         }
@@ -541,9 +550,9 @@ struct ItineraryView: View {
     }
 
     private func metric(_ symbol: String, _ value: String) -> some View {
-        HStack(spacing: 3) {
-            Image(systemName: symbol).font(.system(size: 9)).foregroundStyle(AppColors.inkLight)
-            Text(value).font(.system(size: 11).weight(.medium)).foregroundStyle(AppColors.inkMid)
+        HStack(spacing: 4) {
+            Image(systemName: symbol).font(.system(size: 11)).foregroundStyle(AppColors.inkLight)
+            Text(value).font(.system(size: 13).weight(.medium)).foregroundStyle(AppColors.inkMid)
         }
     }
 
