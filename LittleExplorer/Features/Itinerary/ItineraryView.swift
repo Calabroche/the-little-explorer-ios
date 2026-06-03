@@ -26,6 +26,10 @@ struct ItineraryView: View {
     /// off navigation in the sheet's onDismiss so the full-screen cover
     /// doesn't fight the dismissing sheet for presentation.
     @State private var pendingNavigateAfterDetail: Itinerary?
+    /// Set when a route is tapped from inside the "Bibliothèque" sheet — we
+    /// can't present the detail sheet over another sheet, so we close the
+    /// library sheet first and open the detail in its onDismiss.
+    @State private var pendingDetailAfterLibrary: Itinerary?
 
     var body: some View {
         @Bindable var planner = planner
@@ -103,7 +107,12 @@ struct ItineraryView: View {
                     ShareSheet(items: [url])
                 }
             }
-            .sheet(isPresented: $showLibrarySheet) {
+            .sheet(isPresented: $showLibrarySheet, onDismiss: {
+                if let it = pendingDetailAfterLibrary {
+                    pendingDetailAfterLibrary = nil
+                    detailItinerary = it
+                }
+            }) {
                 librarySheet(planner: planner)
             }
             // fullScreenCover (vs navigationDestination) so navigation
@@ -506,7 +515,14 @@ struct ItineraryView: View {
         let isActive = planner.activeId == itinerary.id
         let diff = difficulty(for: itinerary)
         return Button {
-            detailItinerary = itinerary
+            // Can't stack a sheet on a sheet: if we're inside the library
+            // sheet, close it and open the detail once it's dismissed.
+            if showLibrarySheet {
+                pendingDetailAfterLibrary = itinerary
+                showLibrarySheet = false
+            } else {
+                detailItinerary = itinerary
+            }
         } label: {
             VStack(alignment: .leading, spacing: 0) {
                 // Map banner

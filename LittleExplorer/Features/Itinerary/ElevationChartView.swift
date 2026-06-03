@@ -108,12 +108,22 @@ struct ElevationChartView: View {
                 .foregroundStyle(AppColors.terra)
                 .symbolSize(80)
                 .annotation(position: .top, spacing: 2) {
-                    Text("\(Int(s.elevation)) m · \(String(format: "%.1f", s.km)) km")
-                        .font(.caption2.monospacedDigit())
-                        .foregroundStyle(AppColors.ink)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
-                        .background(AppColors.creamDark, in: RoundedRectangle(cornerRadius: 3))
+                    let grade = gradePercent(at: selectedIndex)
+                    HStack(spacing: 5) {
+                        Text("\(Int(s.elevation)) m")
+                            .foregroundStyle(AppColors.ink)
+                        if let grade {
+                            Text("\(grade >= 0 ? "+" : "")\(Int(grade.rounded()))%")
+                                .fontWeight(.bold)
+                                .foregroundStyle(grade >= 3 ? AppColors.terra : (grade <= -3 ? AppColors.blue : AppColors.inkMid))
+                        }
+                        Text(String(format: "%.1f km", s.km))
+                            .foregroundStyle(AppColors.inkLight)
+                    }
+                    .font(.caption2.monospacedDigit())
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(AppColors.creamDark, in: RoundedRectangle(cornerRadius: 3))
                 }
             }
         }
@@ -145,6 +155,19 @@ struct ElevationChartView: View {
                     )
             }
         }
+    }
+
+    /// Local grade (%) around a sample: Δelevation / Δdistance over the
+    /// neighbouring samples, signed (+ uphill, − downhill).
+    private func gradePercent(at index: Int) -> Double? {
+        guard samples.count >= 2 else { return nil }
+        let lo = max(0, index - 1)
+        let hi = min(samples.count - 1, index + 1)
+        guard hi > lo else { return nil }
+        let dEle = samples[hi].elevation - samples[lo].elevation
+        let dDistM = (samples[hi].km - samples[lo].km) * 1000
+        guard dDistM > 1 else { return nil }
+        return dEle / dDistM * 100
     }
 
     private func update(at point: CGPoint, proxy: ChartProxy, geo: GeometryProxy) {
