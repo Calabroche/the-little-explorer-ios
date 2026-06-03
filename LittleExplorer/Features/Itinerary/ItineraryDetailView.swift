@@ -17,6 +17,11 @@ struct ItineraryDetailView: View {
     let onNavigate: () -> Void
 
     @Environment(\.dismiss) private var dismiss
+    @Environment(AppEnvironment.self) private var environment
+    @State private var selectedIndex: Int?
+    @State private var analysis: APIClient.RouteAnalysis?
+    @State private var analysisLoading = false
+    @State private var analysisFailed = false
 
     var body: some View {
         NavigationStack {
@@ -26,6 +31,7 @@ struct ItineraryDetailView: View {
                     title
                     elevationSection
                     statsSection
+                    waysSection
                     waypointsSection
                 }
                 .padding(.bottom, 24)
@@ -39,6 +45,7 @@ struct ItineraryDetailView: View {
                 }
             }
             .safeAreaInset(edge: .bottom) { actionBar }
+            .task { await loadAnalysis() }
         }
     }
 
@@ -85,7 +92,7 @@ struct ItineraryDetailView: View {
                     ascent: ascent,
                     descent: descent,
                     loading: false,
-                    selectedIndex: .constant(nil),
+                    selectedIndex: $selectedIndex,
                 )
             }
         }
@@ -166,6 +173,114 @@ struct ItineraryDetailView: View {
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(AppColors.creamBorder, lineWidth: 1))
                 .padding(.horizontal, 16)
             }
+        }
+    }
+
+    // MARK: Way types + surfaces
+
+    @ViewBuilder
+    private var waysSection: some View {
+        VStack(alignment: .leading, spacing: 18) {
+            if let a = analysis, !a.wayTypes.isEmpty {
+                breakdown(title: "Types de voies", buckets: a.wayTypes)
+            }
+            if let a = analysis, !a.surfaces.isEmpty {
+                breakdown(title: "Surfaces", buckets: a.surfaces)
+            }
+            if analysisLoading {
+                HStack(spacing: 8) {
+                    ProgressView().controlSize(.small)
+                    Text("Analyse des voies et surfaces…")
+                        .font(.system(size: 12)).foregroundStyle(AppColors.inkLight)
+                }
+                .padding(.horizontal, 16)
+            } else if analysisFailed || (analysis != nil && analysis!.wayTypes.isEmpty && analysis!.surfaces.isEmpty) {
+                Text("Analyse des voies indisponible.")
+                    .font(.system(size: 12)).foregroundStyle(AppColors.inkLight)
+                    .padding(.horizontal, 16)
+            }
+        }
+    }
+
+    private func breakdown(title: String, buckets: [APIClient.RouteAnalysis.Bucket]) -> some View {
+        let total = max(1, buckets.reduce(0) { $0 + $1.meters })
+        return VStack(alignment: .leading, spacing: 10) {
+            sectionHeader(title).padding(.horizontal, 16)
+
+            // Stacked proportional bar.
+            GeometryReader { geo in
+                HStack(spacing: 1) {
+                    ForEach(buckets) { b in
+                        Rectangle()
+                            .fill(bucketColor(b.key))
+                            .frame(width: max(2, geo.size.width * CGFloat(b.meters) / CGFloat(total)))
+                    }
+                }
+            }
+            .frame(height: 12)
+            .clipShape(Capsule())
+            .padding(.horizontal, 16)
+
+            // Legend.
+            VStack(spacing: 0) {
+                ForEach(Array(buckets.enumerated()), id: \.element.id) { index, b in
+                    HStack(spacing: 10) {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(bucketColor(b.key))
+                            .frame(width: 16, height: 16)
+                        Text(b.label)
+                            .font(.system(size: 14).weight(.medium))
+                            .foregroundStyle(AppColors.ink)
+                        Spacer(minLength: 8)
+                        Text(formatMeters(b.meters))
+                            .font(.system(size: 13, design: .monospaced))
+                            .foregroundStyle(AppColors.inkMid)
+                    }
+                    .padding(.vertical, 9)
+                    if index < buckets.count - 1 {
+                        Divider().overlay(AppColors.creamBorder)
+                    }
+                }
+            }
+            .padding(.horizontal, 14)
+            .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(AppColors.creamBorder, lineWidth: 1))
+            .padding(.horizontal, 16)
+        }
+    }
+
+    private func bucketColor(_ key: String) -> Color {
+        switch key {
+        case "route":           return Color(red: 0.60, green: 0.67, blue: 0.74)
+        case "rue":             return Color(red: 0.77, green: 0.81, blue: 0.85)
+        case "piste_cyclable":  return Color(red: 0.31, green: 0.64, blue: 0.58)
+        case "route_nationale": return Color(red: 0.89, green: 0.70, blue: 0.24)
+        case "chemin":          return Color(red: 0.84, green: 0.86, blue: 0.89)
+        case "asphalte":        return Color(red: 0.60, green: 0.67, blue: 0.74)
+        case "revetu":          return Color(red: 0.91, green: 0.91, blue: 0.91)
+        case "non_pave":        return Color(red: 0.81, green: 0.77, blue: 0.66)
+        default:                return Color(red: 0.20, green: 0.20, blue: 0.20)  // inconnu
+        }
+    }
+
+    private func formatMeters(_ m: Int) -> String {
+        if m >= 1000 {
+            let km = Double(m) / 1000
+            return String(format: "%.1f km", km).replacingOccurrences(of: ".", with: ",")
+        }
+        return "\(m) m"
+    }
+
+    private func loadAnalysis() async {
+        guard analysis == nil, !analysisLoading, itinerary.waypoints.count >= 2 else { return }
+        analysisLoading = true
+        analysisFailed = false
+        defer { analysisLoading = false }
+        do {
+            let result = try await environment.api.routeWays(waypoints: itinerary.waypoints.map(\.coordinate))
+            await MainActor.run { analysis = result }
+        } catch {
+            await MainActor.run { analysisFailed = true }
         }
     }
 

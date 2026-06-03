@@ -601,6 +601,32 @@ actor APIClient {
 
     // MARK: - Bike routing
 
+    // MARK: - Route analysis (way types + surfaces)
+
+    struct RouteAnalysis: Decodable, Sendable {
+        struct Bucket: Decodable, Sendable, Identifiable {
+            let key: String
+            let label: String
+            let meters: Int
+            var id: String { key }
+        }
+        let wayTypes: [Bucket]
+        let surfaces: [Bucket]
+        let totalM: Int
+
+        enum CodingKeys: String, CodingKey {
+            case wayTypes, surfaces
+            case totalM = "total_m"
+        }
+    }
+
+    /// Way-type + surface breakdown for a route (OSM-enriched). Re-routes
+    /// the waypoints server-side, so we just send the ordered points.
+    func routeWays(waypoints: [Coordinate]) async throws -> RouteAnalysis {
+        struct Body: Encodable { let waypoints: [[Double]] }
+        return try await post("/api/route-ways", body: Body(waypoints: waypoints.map { [$0.lat, $0.lng] }))
+    }
+
     func bikeRoute(waypoints: [Coordinate], steps: Bool = false) async throws -> BikeRoute {
         struct Body: Encodable {
             let waypoints: [[Double]]
