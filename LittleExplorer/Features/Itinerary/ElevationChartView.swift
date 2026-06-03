@@ -52,12 +52,26 @@ struct ElevationChartView: View {
                     .monospacedDigit()
             }
             chart
+            gradeLegend
         }
         .padding(.vertical, 12)
         .padding(.horizontal, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 4))
         .overlay(RoundedRectangle(cornerRadius: 4).stroke(AppColors.creamBorder, lineWidth: 1))
+    }
+
+    private var gradeLegend: some View {
+        HStack(spacing: 12) {
+            ForEach(Array(zip(Self.bandColors, ["0–2 %", "3–5 %", "6–10 %", "> 10 %"]).enumerated()), id: \.offset) { _, pair in
+                HStack(spacing: 4) {
+                    RoundedRectangle(cornerRadius: 2).fill(pair.0).frame(width: 11, height: 7)
+                    Text(pair.1).font(.system(size: 9)).foregroundStyle(AppColors.inkLight)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.top, 2)
     }
 
     /// Y-axis domain padded a little around the real min/max so the
@@ -77,26 +91,30 @@ struct ElevationChartView: View {
     private var chart: some View {
         let domain = yDomain
         return Chart {
-            ForEach(samples) { sample in
-                AreaMark(
-                    x: .value("km", sample.km),
-                    yStart: .value("base", domain.lowerBound),
-                    yEnd: .value("ele", sample.elevation),
-                )
-                .foregroundStyle(
-                    .linearGradient(
-                        colors: [AppColors.green.opacity(0.45), AppColors.green.opacity(0.12)],
-                        startPoint: .top, endPoint: .bottom,
-                    ),
-                )
-                .interpolationMethod(.catmullRom)
-                LineMark(
-                    x: .value("km", sample.km),
-                    y: .value("ele", sample.elevation),
-                )
-                .foregroundStyle(AppColors.green)
-                .lineStyle(StrokeStyle(lineWidth: 2))
-                .interpolationMethod(.catmullRom)
+            // Profile coloured by slope: each contiguous grade band is its own
+            // series so the area/line take the band colour (green ≤2 %, yellow
+            // 3-5 %, orange 6-10 %, red >10 %).
+            ForEach(gradeBands()) { band in
+                ForEach(band.samples) { s in
+                    AreaMark(
+                        x: .value("km", s.km),
+                        yStart: .value("base", domain.lowerBound),
+                        yEnd: .value("ele", s.elevation),
+                        series: .value("band", band.id),
+                    )
+                    .foregroundStyle(band.color.opacity(0.5))
+                    .interpolationMethod(.catmullRom)
+                }
+                ForEach(band.samples) { s in
+                    LineMark(
+                        x: .value("km", s.km),
+                        y: .value("ele", s.elevation),
+                        series: .value("band", band.id),
+                    )
+                    .foregroundStyle(band.color)
+                    .lineStyle(StrokeStyle(lineWidth: 2))
+                    .interpolationMethod(.catmullRom)
+                }
             }
             if let selectedIndex, samples.indices.contains(selectedIndex) {
                 let s = samples[selectedIndex]
@@ -180,6 +198,45 @@ struct ElevationChartView: View {
         let dDistM = (samples[hi].km - samples[lo].km) * 1000
         guard dDistM > 1 else { return nil }
         return dEle / dDistM * 100
+    }
+
+    // MARK: - Grade banding
+
+    private struct GradeBand: Identifiable { let id: Int; let color: Color; let samples: [ElevationSample] }
+
+    static let bandColors: [Color] = [
+        Color(red: 0.36, green: 0.60, blue: 0.37),  // green  ≤2 %
+        Color(red: 0.89, green: 0.76, blue: 0.24),  // yellow 3-5 %
+        Color(red: 0.88, green: 0.53, blue: 0.24),  // orange 6-10 %
+        Color(red: 0.75, green: 0.22, blue: 0.17),  // red    >10 %
+    ]
+
+    private func gradeBandIndex(_ g: Double) -> Int {
+        if g < 3 { return 0 }
+        if g < 6 { return 1 }
+        if g <= 10 { return 2 }
+        return 3
+    }
+
+    /// Split the profile into contiguous runs of the same grade band so each
+    /// can be drawn in its slope colour. Each run repeats the boundary sample
+    /// so adjacent bands visually connect.
+    private func gradeBands() -> [GradeBand] {
+        guard samples.count >= 2 else {
+            return samples.isEmpty ? [] : [GradeBand(id: 0, color: Self.bandColors[0], samples: samples)]
+        }
+        var runs: [(idx: Int, pts: [ElevationSample])] = []
+        for i in 1..<samples.count {
+            let dDist = (samples[i].km - samples[i - 1].km) * 1000
+            let grade = dDist > 1 ? (samples[i].elevation - samples[i - 1].elevation) / dDist * 100 : 0
+            let bi = gradeBandIndex(grade)
+            if !runs.isEmpty, runs[runs.count - 1].idx == bi {
+                runs[runs.count - 1].pts.append(samples[i])
+            } else {
+                runs.append((idx: bi, pts: [samples[i - 1], samples[i]]))
+            }
+        }
+        return runs.enumerated().map { GradeBand(id: $0.offset, color: Self.bandColors[$0.element.idx], samples: $0.element.pts) }
     }
 
     private func update(at point: CGPoint, proxy: ChartProxy, geo: GeometryProxy) {
