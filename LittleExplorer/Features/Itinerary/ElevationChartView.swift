@@ -58,19 +58,43 @@ struct ElevationChartView: View {
         .overlay(RoundedRectangle(cornerRadius: 4).stroke(AppColors.creamBorder, lineWidth: 1))
     }
 
+    /// Y-axis domain padded a little around the real min/max so the
+    /// profile uses the full chart height instead of being squashed
+    /// against a 0 baseline. The area then fills from the bottom edge up
+    /// to the line, like a proper elevation profile.
+    private var yDomain: ClosedRange<Double> {
+        let elevs = samples.map(\.elevation)
+        let lo = elevs.min() ?? 0
+        let hi = elevs.max() ?? (lo + 100)
+        let pad = max(10, (hi - lo) * 0.18)
+        let floor = max(0, lo - pad)
+        let ceil = hi + pad
+        return floor...(ceil > floor ? ceil : floor + 1)
+    }
+
     private var chart: some View {
-        Chart {
+        let domain = yDomain
+        return Chart {
             ForEach(samples) { sample in
                 AreaMark(
                     x: .value("km", sample.km),
-                    y: .value("ele", sample.elevation),
+                    yStart: .value("base", domain.lowerBound),
+                    yEnd: .value("ele", sample.elevation),
                 )
-                .foregroundStyle(AppColors.green.opacity(0.5))
+                .foregroundStyle(
+                    .linearGradient(
+                        colors: [AppColors.green.opacity(0.45), AppColors.green.opacity(0.12)],
+                        startPoint: .top, endPoint: .bottom,
+                    ),
+                )
+                .interpolationMethod(.catmullRom)
                 LineMark(
                     x: .value("km", sample.km),
                     y: .value("ele", sample.elevation),
                 )
                 .foregroundStyle(AppColors.green)
+                .lineStyle(StrokeStyle(lineWidth: 2))
+                .interpolationMethod(.catmullRom)
             }
             if let selectedIndex, samples.indices.contains(selectedIndex) {
                 let s = samples[selectedIndex]
@@ -93,7 +117,9 @@ struct ElevationChartView: View {
                 }
             }
         }
-        .frame(height: 100)
+        .frame(maxWidth: .infinity)
+        .frame(height: 120)
+        .chartYScale(domain: domain)
         .chartYAxis {
             AxisMarks(position: .leading) { _ in
                 AxisValueLabel().font(.system(size: 9))

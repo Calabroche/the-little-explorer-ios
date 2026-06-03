@@ -51,6 +51,10 @@ struct ItineraryView: View {
                     }
 
                     if !planner.elevSeries.isEmpty || planner.elevationLoading {
+                        // Full-bleed (no horizontal padding) so the profile
+                        // always spans the screen width — it was randomly
+                        // shrinking when the parent didn't hand it the full
+                        // width; ElevationChartView now also pins maxWidth.
                         ElevationChartView(
                             samples: planner.elevSeries,
                             ascent: planner.ascent,
@@ -58,7 +62,6 @@ struct ItineraryView: View {
                             loading: planner.elevationLoading,
                             selectedIndex: $planner.hoverIndex,
                         )
-                        .padding(.horizontal, 16)
                     }
 
                     librarySection(planner: planner)

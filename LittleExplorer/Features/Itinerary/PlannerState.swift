@@ -153,7 +153,8 @@ final class PlannerState {
         elevationLoading = true
         defer { elevationLoading = false }
         do {
-            let values = try await api.elevation(for: points)
+            let raw = try await api.elevation(for: points)
+            let values = GeoMath.sanitizeElevations(raw)
             let series = GeoMath.elevationSeries(polyline: geometry, sampleIndices: indices, elevations: values)
             elevSeries = series.map { ElevationSample(km: $0.km, elevation: $0.ele) }
             elevations = values
@@ -270,13 +271,17 @@ final class PlannerState {
         routeError = nil
         if let geometry = itinerary.geometry,
            let indices = itinerary.elevSampleIndices,
-           let elevations = itinerary.elevations {
+           let savedElevations = itinerary.elevations {
+            let elevations = GeoMath.sanitizeElevations(savedElevations)
             let series = GeoMath.elevationSeries(polyline: geometry, sampleIndices: indices, elevations: elevations)
             elevSeries = series.map { ElevationSample(km: $0.km, elevation: $0.ele) }
             self.elevations = elevations
             self.elevSampleIndices = indices
-            ascent = itinerary.totalAscent ?? 0
-            descent = itinerary.totalDescent ?? 0
+            // Recompute from the cleaned series so D+/D− match the chart
+            // (saved values may have been inflated by the old 0-spikes).
+            let stats = GeoMath.ascentDescent(elevations)
+            ascent = stats.ascent
+            descent = stats.descent
         } else {
             elevSeries = []
             elevations = nil

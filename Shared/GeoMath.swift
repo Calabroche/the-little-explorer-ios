@@ -67,6 +67,40 @@ enum GeoMath {
         return (points, indices)
     }
 
+    /// Replace missing / invalid elevation readings (the elevation API
+    /// returns 0 or a non-finite value where it has no data) by linearly
+    /// interpolating between the nearest valid neighbours. Without this the
+    /// profile chart spikes straight down to 0 and ascent/descent inflate.
+    static func sanitizeElevations(_ values: [Double]) -> [Double] {
+        guard !values.isEmpty else { return values }
+        func isValid(_ v: Double) -> Bool { v.isFinite && v > 0 }
+        var out = values
+        let n = out.count
+        var i = 0
+        while i < n {
+            if isValid(out[i]) { i += 1; continue }
+            // Span of consecutive invalid values is [i, j).
+            var j = i
+            while j < n, !isValid(out[j]) { j += 1 }
+            let prev: Double? = i > 0 ? out[i - 1] : nil
+            let next: Double? = j < n ? out[j] : nil
+            if let p = prev, let q = next {
+                let span = Double(j - (i - 1))
+                for k in i..<j {
+                    let t = Double(k - (i - 1)) / span
+                    out[k] = p + (q - p) * t
+                }
+            } else if let p = prev {
+                for k in i..<j { out[k] = p }       // trailing gap → hold last
+            } else if let q = next {
+                for k in i..<j { out[k] = q }       // leading gap → hold first
+            }
+            // else: every value invalid — leave untouched.
+            i = j
+        }
+        return out
+    }
+
     /// Total ascent / descent (rounded m).
     static func ascentDescent(_ elevations: [Double]) -> (ascent: Int, descent: Int) {
         var asc: Double = 0
