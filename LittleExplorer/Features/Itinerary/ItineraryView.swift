@@ -1,5 +1,6 @@
 import MapKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Replaces the v0 PlannerView with the full Itinerary builder.
 struct ItineraryView: View {
@@ -30,6 +31,8 @@ struct ItineraryView: View {
     /// can't present the detail sheet over another sheet, so we close the
     /// library sheet first and open the detail in its onDismiss.
     @State private var pendingDetailAfterLibrary: Itinerary?
+    @State private var showImporter = false
+    @State private var importError: String?
 
     var body: some View {
         @Bindable var planner = planner
@@ -84,11 +87,33 @@ struct ItineraryView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
+                        showImporter = true
+                    } label: {
+                        Label("Importer un GPX", systemImage: "square.and.arrow.down")
+                    }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button {
                         showLibrarySheet = true
                     } label: {
                         Label("Bibliothèque", systemImage: "books.vertical")
                     }
                 }
+            }
+            .fileImporter(
+                isPresented: $showImporter,
+                allowedContentTypes: [UTType(filenameExtension: "gpx") ?? .xml, .xml],
+                allowsMultipleSelection: false,
+            ) { result in
+                handleImport(result, planner: planner)
+            }
+            .alert("Import GPX", isPresented: Binding(
+                get: { importError != nil },
+                set: { if !$0 { importError = nil } },
+            )) {
+                Button("OK", role: .cancel) { importError = nil }
+            } message: {
+                Text(importError ?? "")
             }
             .onAppear {
                 library.load(user: environment.currentUser)
@@ -642,6 +667,32 @@ struct ItineraryView: View {
             longitudeDelta: max(0.05, (lngs.max()! - lngs.min()!) * 1.4),
         )
         cameraPosition = .region(MKCoordinateRegion(center: center, span: span))
+    }
+
+    /// Read a picked GPX file, build an itinerary from it, save it to the
+    /// library, and load it onto the map.
+    private func handleImport(_ result: Result<[URL], Error>, planner: PlannerState) {
+        switch result {
+        case .failure(let error):
+            importError = error.localizedDescription
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            let scoped = url.startAccessingSecurityScopedResource()
+            defer { if scoped { url.stopAccessingSecurityScopedResource() } }
+            do {
+                let data = try Data(contentsOf: url)
+                guard let itinerary = GPXImport.itinerary(from: data) else {
+                    importError = "Ce fichier GPX ne contient pas de tracé exploitable."
+                    return
+                }
+                library.saveAndUpload(itinerary, user: environment.currentUser)
+                planner.load(itinerary)
+                recenterMap()
+                detailItinerary = itinerary
+            } catch {
+                importError = "Lecture du fichier impossible : \(error.localizedDescription)"
+            }
+        }
     }
 
     private func save(planner: PlannerState) {
