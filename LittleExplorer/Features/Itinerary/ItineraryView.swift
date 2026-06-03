@@ -20,6 +20,7 @@ struct ItineraryView: View {
     @State private var showLibrarySheet = false
     @State private var pendingDeleteId: String?
     @State private var navigatingItinerary: Itinerary?
+    @State private var showFullMap = false
 
     var body: some View {
         @Bindable var planner = planner
@@ -32,10 +33,10 @@ struct ItineraryView: View {
                     }
                     .padding(.horizontal, 16)
 
-                    map
-                        .frame(height: 460)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(AppColors.creamBorder, lineWidth: 1))
+                    mapPreview(planner: planner)
+                        .frame(height: 300)
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(AppColors.creamBorder, lineWidth: 1))
                         .padding(.horizontal, 16)
 
                     statsRow
@@ -104,6 +105,9 @@ struct ItineraryView: View {
             .fullScreenCover(item: $navigatingItinerary) { itinerary in
                 NavigateView(itinerary: itinerary)
             }
+            .fullScreenCover(isPresented: $showFullMap) {
+                fullMapView(planner: planner)
+            }
             .alert("Supprimer cet itinéraire ?", isPresented: Binding(
                 get: { pendingDeleteId != nil },
                 set: { if !$0 { pendingDeleteId = nil } },
@@ -122,35 +126,96 @@ struct ItineraryView: View {
 
     // MARK: - Map
 
-    private var map: some View {
-        Map(position: $cameraPosition) {
-            if let geometry = planner.geometry, !geometry.isEmpty {
-                MapPolyline(coordinates: geometry.map(\.clLocation))
-                    .stroke(AppColors.terra, lineWidth: 4)
-            }
-            ForEach(Array(planner.waypoints.enumerated()), id: \.offset) { index, waypoint in
-                Marker("\(index + 1)", coordinate: waypoint.coordinate.clLocation)
-                    .tint(AppColors.terra)
-            }
-            // Synced marker from elevation chart drag.
-            if let idx = planner.hoverIndex,
-               let geometry = planner.geometry,
-               let indices = planner.elevSampleIndices,
-               indices.indices.contains(idx) {
-                let geomIdx = indices[idx]
-                if geometry.indices.contains(geomIdx) {
-                    Annotation("", coordinate: geometry[geomIdx].clLocation) {
-                        Circle()
-                            .fill(AppColors.terra)
-                            .frame(width: 12, height: 12)
-                            .overlay(Circle().stroke(Color.white, lineWidth: 2))
-                    }
+    /// Polyline + waypoint markers, shared by the inline preview and the
+    /// full-screen interactive map.
+    @MapContentBuilder
+    private func routeMapContent(_ planner: PlannerState) -> some MapContent {
+        if let geometry = planner.geometry, !geometry.isEmpty {
+            MapPolyline(coordinates: geometry.map(\.clLocation))
+                .stroke(AppColors.terra, lineWidth: 4)
+        }
+        ForEach(Array(planner.waypoints.enumerated()), id: \.offset) { index, waypoint in
+            Marker("\(index + 1)", coordinate: waypoint.coordinate.clLocation)
+                .tint(AppColors.terra)
+        }
+        // Synced marker from elevation chart drag.
+        if let idx = planner.hoverIndex,
+           let geometry = planner.geometry,
+           let indices = planner.elevSampleIndices,
+           indices.indices.contains(idx) {
+            let geomIdx = indices[idx]
+            if geometry.indices.contains(geomIdx) {
+                Annotation("", coordinate: geometry[geomIdx].clLocation) {
+                    Circle()
+                        .fill(AppColors.terra)
+                        .frame(width: 12, height: 12)
+                        .overlay(Circle().stroke(Color.white, lineWidth: 2))
                 }
             }
         }
-        .mapControls {
-            MapCompass()
-            MapScaleView()
+    }
+
+    /// Inline map *preview*. `interactionModes: []` makes it non-
+    /// interactive, so a vertical drag passes straight through to the
+    /// surrounding ScrollView — the page scrolls even with a finger on
+    /// the map, instead of the map trapping the gesture. Tap "Agrandir"
+    /// (or the map) for a full-screen interactive map to pan / zoom.
+    private func mapPreview(planner: PlannerState) -> some View {
+        Map(position: $cameraPosition, interactionModes: []) {
+            routeMapContent(planner)
+        }
+        .overlay(alignment: .topTrailing) {
+            Button {
+                showFullMap = true
+            } label: {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(AppColors.ink)
+                    .padding(8)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 8))
+            }
+            .buttonStyle(.plain)
+            .padding(8)
+        }
+        .overlay(alignment: .bottomLeading) {
+            if planner.waypoints.isEmpty {
+                Text("Cherche un village ou une adresse pour commencer")
+                    .font(.system(size: 11))
+                    .foregroundStyle(AppColors.inkMid)
+                    .padding(8)
+                    .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 6))
+                    .padding(8)
+            }
+        }
+        // A plain tap (not a drag) opens the full-screen map; drags still
+        // scroll the page since the map itself ignores gestures.
+        .onTapGesture { showFullMap = true }
+    }
+
+    /// Full-screen interactive map (pan / zoom / rotate), opened from the
+    /// preview. A single Close button — nothing else in the way.
+    private func fullMapView(planner: PlannerState) -> some View {
+        ZStack(alignment: .topTrailing) {
+            Map(position: $cameraPosition) {
+                routeMapContent(planner)
+            }
+            .mapControls {
+                MapCompass()
+                MapScaleView()
+            }
+            .ignoresSafeArea()
+
+            Button {
+                showFullMap = false
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(AppColors.ink)
+                    .padding(12)
+                    .background(.regularMaterial, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .padding(16)
         }
     }
 
@@ -377,14 +442,27 @@ struct ItineraryView: View {
     @ViewBuilder
     private func librarySheet(planner: PlannerState) -> some View {
         NavigationStack {
-            List {
-                ForEach(library.items) { itinerary in
-                    libraryRow(itinerary, planner: planner)
-                        .listRowSeparator(.hidden)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("\(library.items.count) itinéraire\(library.items.count > 1 ? "s" : "") enregistré\(library.items.count > 1 ? "s" : "")")
+                        .font(.system(size: 12).weight(.semibold))
+                        .foregroundStyle(AppColors.inkLight)
+                    if library.items.isEmpty {
+                        VStack(spacing: 6) {
+                            Image(systemName: "map").font(.system(size: 20)).foregroundStyle(AppColors.inkLight)
+                            Text("Aucun itinéraire enregistré.").font(.system(size: 13)).foregroundStyle(AppColors.inkLight)
+                        }
+                        .frame(maxWidth: .infinity).padding(.vertical, 40)
+                    } else {
+                        ForEach(library.items) { itinerary in
+                            libraryRow(itinerary, planner: planner)
+                        }
+                    }
                 }
+                .padding(16)
             }
-            .listStyle(.plain)
-            .navigationTitle("Bibliothèque")
+            .background(AppColors.cream)
+            .navigationTitle("Itinéraires enregistrés")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -394,44 +472,109 @@ struct ItineraryView: View {
         }
     }
 
+    /// Komoot-style saved-route card: map thumbnail, difficulty badge,
+    /// title, duration / distance / D+ metrics, and date + start place.
     private func libraryRow(_ itinerary: Itinerary, planner: PlannerState) -> some View {
-        Button {
+        let isActive = planner.activeId == itinerary.id
+        let diff = difficulty(for: itinerary)
+        return Button {
             planner.load(itinerary)
             recenterMap()
             showLibrarySheet = false
         } label: {
-            HStack(spacing: 10) {
-                VStack(alignment: .leading, spacing: 2) {
+            HStack(spacing: 12) {
+                RouteThumbnail(geometry: itinerary.geometry ?? [], waypoints: itinerary.waypoints)
+                    .frame(width: 78, height: 78)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(AppColors.creamBorder, lineWidth: 1))
+
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 6) {
+                        Text(diff.label.uppercased())
+                            .font(.system(size: 9).weight(.bold)).tracking(0.5)
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 7).padding(.vertical, 2)
+                            .background(diff.color, in: Capsule())
+                        if isActive {
+                            Image(systemName: "checkmark.circle.fill")
+                                .font(.system(size: 11)).foregroundStyle(AppColors.terra)
+                        }
+                        Spacer(minLength: 0)
+                    }
+
                     Text(itinerary.name)
-                        .font(.system(size: 13).weight(.semibold))
+                        .font(.system(size: 15, design: .serif).weight(.bold))
                         .foregroundStyle(AppColors.ink)
                         .lineLimit(1)
-                    HStack(spacing: 6) {
-                        if let km = itinerary.distanceKm { Text("\(String(format: "%.1f", km)) km") }
-                        if let asc = itinerary.totalAscent { Text("· D+ \(asc) m") }
-                        Text("· \(itinerary.waypoints.count) stops")
+
+                    HStack(spacing: 10) {
+                        if let min = itinerary.durationMin { metric("clock", formatDur(min)) }
+                        if let km = itinerary.distanceKm { metric("ruler", String(format: "%.1f km", km)) }
+                        if let asc = itinerary.totalAscent { metric("arrow.up.right", "\(asc) m") }
                     }
-                    .font(.system(size: 10))
-                    .foregroundStyle(AppColors.inkLight)
+
+                    Text(subtitle(for: itinerary))
+                        .font(.system(size: 10))
+                        .foregroundStyle(AppColors.inkLight)
+                        .lineLimit(1)
                 }
-                Spacer()
-                if planner.activeId == itinerary.id {
-                    Image(systemName: "checkmark.circle.fill").foregroundStyle(AppColors.terra)
-                }
+
                 Button(role: .destructive) {
                     pendingDeleteId = itinerary.id
                 } label: {
-                    Image(systemName: "trash").font(.caption)
+                    Image(systemName: "trash")
+                        .font(.system(size: 13))
+                        .foregroundStyle(.red.opacity(0.7))
+                        .frame(width: 30, height: 30)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.mini)
+                .buttonStyle(.plain)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 8)
-            .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 4))
-            .overlay(RoundedRectangle(cornerRadius: 4).stroke(AppColors.creamBorder, lineWidth: 1))
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(
+                RoundedRectangle(cornerRadius: 10)
+                    .stroke(isActive ? AppColors.terra : AppColors.creamBorder, lineWidth: isActive ? 1.5 : 1),
+            )
         }
         .buttonStyle(.plain)
+    }
+
+    private func metric(_ symbol: String, _ value: String) -> some View {
+        HStack(spacing: 3) {
+            Image(systemName: symbol).font(.system(size: 9)).foregroundStyle(AppColors.inkLight)
+            Text(value).font(.system(size: 11).weight(.medium)).foregroundStyle(AppColors.inkMid)
+        }
+    }
+
+    private func formatDur(_ minutes: Int) -> String {
+        let h = minutes / 60, m = minutes % 60
+        return h > 0 ? "\(h)h\(String(format: "%02d", m))" : "\(m) min"
+    }
+
+    private struct DifficultyTag { let label: String; let color: Color }
+
+    /// Derive a Komoot-style difficulty from distance + climbing, since we
+    /// don't store an explicit rating. effort = km + D+/8 → Facile / Modéré
+    /// / Difficile (tuned so 26 km/360 m = Modéré, 71 km/1050 m = Difficile).
+    private func difficulty(for it: Itinerary) -> DifficultyTag {
+        let dist = it.distanceKm ?? 0
+        let asc = Double(it.totalAscent ?? 0)
+        let effort = dist + asc / 8
+        if effort < 50 { return DifficultyTag(label: "Facile", color: AppColors.green) }
+        if effort < 150 { return DifficultyTag(label: "Modéré", color: AppColors.terra) }
+        return DifficultyTag(label: "Difficile", color: Color(red: 0.61, green: 0.23, blue: 0.10))
+    }
+
+    private func subtitle(for it: Itinerary) -> String {
+        let fmt = DateFormatter()
+        fmt.locale = Locale(identifier: "fr_FR")
+        fmt.dateFormat = "d MMM yyyy"
+        let date = fmt.string(from: it.createdAt)
+        if let place = it.waypoints.first?.city ?? it.waypoints.first?.name {
+            return "\(date) · \(place)"
+        }
+        return date
     }
 
     // MARK: - Actions
@@ -533,5 +676,56 @@ struct ItineraryView: View {
         }
         .disabled(disabled)
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Route thumbnail
+
+/// Small static map showing a saved route's polyline, used by the
+/// library cards. `interactionModes: []` keeps it non-interactive so it
+/// never steals taps/scrolls from the enclosing card button or list.
+private struct RouteThumbnail: View {
+    let geometry: [Coordinate]
+    let waypoints: [Waypoint]
+
+    var body: some View {
+        if geometry.count >= 2 || !waypoints.isEmpty {
+            Map(initialPosition: .region(region), interactionModes: []) {
+                if geometry.count >= 2 {
+                    MapPolyline(coordinates: geometry.map(\.clLocation))
+                        .stroke(AppColors.terra, lineWidth: 3)
+                }
+            }
+            .allowsHitTesting(false)
+        } else {
+            ZStack {
+                AppColors.creamDark
+                Image(systemName: "map").font(.system(size: 18)).foregroundStyle(AppColors.inkLight)
+            }
+        }
+    }
+
+    private var region: MKCoordinateRegion {
+        let coords: [CLLocationCoordinate2D] = geometry.isEmpty
+            ? waypoints.map { CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lng) }
+            : geometry.map(\.clLocation)
+        guard
+            let minLat = coords.map(\.latitude).min(),
+            let maxLat = coords.map(\.latitude).max(),
+            let minLng = coords.map(\.longitude).min(),
+            let maxLng = coords.map(\.longitude).max()
+        else {
+            return MKCoordinateRegion(
+                center: CLLocationCoordinate2D(latitude: 45.81, longitude: 4.75),
+                span: MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1),
+            )
+        }
+        return MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2, longitude: (minLng + maxLng) / 2),
+            span: MKCoordinateSpan(
+                latitudeDelta: max(0.01, (maxLat - minLat) * 1.5),
+                longitudeDelta: max(0.01, (maxLng - minLng) * 1.5),
+            ),
+        )
     }
 }
