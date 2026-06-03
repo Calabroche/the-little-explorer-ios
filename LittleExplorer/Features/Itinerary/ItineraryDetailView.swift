@@ -362,8 +362,30 @@ struct ItineraryDetailView: View {
             let indices = itinerary.elevSampleIndices,
             !cleanElevations.isEmpty
         else { return [] }
-        return GeoMath.elevationSeries(polyline: geometry, sampleIndices: indices, elevations: cleanElevations)
+        let base = GeoMath.elevationSeries(polyline: geometry, sampleIndices: indices, elevations: cleanElevations)
             .map { ElevationSample(km: $0.km, elevation: $0.ele) }
+        return resampleEvery100m(base)
+    }
+
+    /// Linear-interpolate the profile onto a 100 m grid so scrubbing reads a
+    /// value roughly every 100 m, regardless of how densely the route was
+    /// stored. Capped so very long routes stay light.
+    private func resampleEvery100m(_ base: [ElevationSample]) -> [ElevationSample] {
+        guard base.count >= 2, let total = base.last?.km, total > 0.1 else { return base }
+        let step = 0.1
+        let count = min(1200, Int(total / step) + 1)
+        var out: [ElevationSample] = []
+        out.reserveCapacity(count)
+        var j = 0
+        for i in 0..<count {
+            let k = min(total, Double(i) * step)
+            while j < base.count - 2 && base[j + 1].km < k { j += 1 }
+            let a = base[j]
+            let b = base[min(j + 1, base.count - 1)]
+            let t = b.km > a.km ? (k - a.km) / (b.km - a.km) : 0
+            out.append(ElevationSample(km: k, elevation: a.elevation + (b.elevation - a.elevation) * t))
+        }
+        return out
     }
 
     private var ascent: Int { GeoMath.ascentDescent(cleanElevations).ascent }

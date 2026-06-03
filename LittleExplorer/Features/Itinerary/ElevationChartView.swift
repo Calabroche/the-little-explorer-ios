@@ -139,6 +139,9 @@ struct ElevationChartView: View {
         .frame(maxWidth: .infinity)
         .frame(height: 150)
         .chartYScale(domain: domain)
+        // Pin the x-domain to the data so the profile fills the full width —
+        // by default Charts rounds the axis up and leaves a void on the right.
+        .chartXScale(domain: (samples.first?.km ?? 0)...max(samples.last?.km ?? 1, (samples.first?.km ?? 0) + 0.1))
         .chartYAxis {
             AxisMarks(position: .leading) { _ in
                 AxisValueLabel().font(.system(size: 9))
