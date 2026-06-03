@@ -21,6 +21,11 @@ struct ItineraryView: View {
     @State private var pendingDeleteId: String?
     @State private var navigatingItinerary: Itinerary?
     @State private var showFullMap = false
+    @State private var detailItinerary: Itinerary?
+    /// Set when the user taps "Naviguer" inside the detail sheet — we kick
+    /// off navigation in the sheet's onDismiss so the full-screen cover
+    /// doesn't fight the dismissing sheet for presentation.
+    @State private var pendingNavigateAfterDetail: Itinerary?
 
     var body: some View {
         @Bindable var planner = planner
@@ -110,6 +115,25 @@ struct ItineraryView: View {
             }
             .fullScreenCover(isPresented: $showFullMap) {
                 fullMapView(planner: planner)
+            }
+            .sheet(item: $detailItinerary, onDismiss: {
+                if let it = pendingNavigateAfterDetail {
+                    pendingNavigateAfterDetail = nil
+                    navigatingItinerary = it
+                }
+            }) { it in
+                ItineraryDetailView(
+                    itinerary: it,
+                    onLoad: {
+                        planner.load(it)
+                        recenterMap()
+                        showLibrarySheet = false
+                    },
+                    onNavigate: {
+                        planner.load(it)
+                        pendingNavigateAfterDetail = it
+                    },
+                )
             }
             .alert("Supprimer cet itinéraire ?", isPresented: Binding(
                 get: { pendingDeleteId != nil },
@@ -482,9 +506,7 @@ struct ItineraryView: View {
         let isActive = planner.activeId == itinerary.id
         let diff = difficulty(for: itinerary)
         return Button {
-            planner.load(itinerary)
-            recenterMap()
-            showLibrarySheet = false
+            detailItinerary = itinerary
         } label: {
             VStack(alignment: .leading, spacing: 0) {
                 // Map banner
@@ -696,7 +718,7 @@ struct ItineraryView: View {
 /// Small static map showing a saved route's polyline, used by the
 /// library cards. `interactionModes: []` keeps it non-interactive so it
 /// never steals taps/scrolls from the enclosing card button or list.
-private struct RouteThumbnail: View {
+struct RouteThumbnail: View {
     let geometry: [Coordinate]
     let waypoints: [Waypoint]
 
