@@ -272,16 +272,27 @@ struct ItineraryDetailView: View {
     }
 
     private func loadAnalysis() async {
-        guard analysis == nil, !analysisLoading, itinerary.waypoints.count >= 2 else { return }
+        guard analysis == nil, !analysisLoading else { return }
+        let haveGeom = (itinerary.geometry?.count ?? 0) >= 2
+        guard haveGeom || itinerary.waypoints.count >= 2 else { return }
         analysisLoading = true
         analysisFailed = false
         defer { analysisLoading = false }
         do {
-            // Close the loop the same way the builder does (effectiveWaypoints),
-            // otherwise route-ways routes one-way (A→B) and the way-type /
-            // surface totals only cover ~half a loop route.
-            var pts = itinerary.waypoints.map(\.coordinate)
-            if itinerary.loop, pts.count >= 2 { pts.append(pts[0]) }
+            // Sample waypoints ALONG the stored geometry (capped at OSRM's
+            // 25-point limit) so route-ways re-routes a path that follows the
+            // actual route — essential for imported GPX and loops, where the
+            // stored waypoints are only start/end (or a single point). Fall
+            // back to the raw waypoints when there's no geometry.
+            let pts: [Coordinate]
+            if let geom = itinerary.geometry, geom.count >= 2 {
+                pts = GeoMath.downsampleByDistance(geom, n: min(24, geom.count)).points
+            } else {
+                var wp = itinerary.waypoints.map(\.coordinate)
+                if itinerary.loop, wp.count >= 2 { wp.append(wp[0]) }
+                pts = wp
+            }
+            guard pts.count >= 2 else { return }
             let result = try await environment.api.routeWays(waypoints: pts)
             await MainActor.run { analysis = result }
         } catch {

@@ -53,7 +53,9 @@ struct ElevationChartView: View {
             }
             chart
         }
-        .padding(12)
+        .padding(.vertical, 12)
+        .padding(.horizontal, 8)
+        .frame(maxWidth: .infinity, alignment: .leading)
         .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 4))
         .overlay(RoundedRectangle(cornerRadius: 4).stroke(AppColors.creamBorder, lineWidth: 1))
     }
@@ -107,7 +109,14 @@ struct ElevationChartView: View {
                 )
                 .foregroundStyle(AppColors.terra)
                 .symbolSize(80)
-                .annotation(position: .top, spacing: 2) {
+                .annotation(
+                    position: .top,
+                    alignment: .center,
+                    spacing: 2,
+                    // Keep the tooltip within the chart so it doesn't shove
+                    // the plot smaller when you scrub near the edges.
+                    overflowResolution: .init(x: .fit(to: .chart), y: .disabled),
+                ) {
                     let grade = gradePercent(at: selectedIndex)
                     HStack(spacing: 5) {
                         Text("\(Int(s.elevation)) m")
@@ -128,7 +137,7 @@ struct ElevationChartView: View {
             }
         }
         .frame(maxWidth: .infinity)
-        .frame(height: 120)
+        .frame(height: 150)
         .chartYScale(domain: domain)
         .chartYAxis {
             AxisMarks(position: .leading) { _ in

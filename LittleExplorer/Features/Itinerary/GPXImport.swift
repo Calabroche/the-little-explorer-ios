@@ -32,19 +32,25 @@ enum GPXImport {
             ele = rawEle
         }
 
-        // Distance.
+        // Distance from the full-resolution track.
         var distM = 0.0
-        for i in 1..<geometry.count { distM += GeoMath.haversine(geometry[i - 1], geometry[i]) }
+        for i in 1..<raw.count { distM += GeoMath.haversine(raw[i - 1], raw[i]) }
         let distKm = (distM / 1000 * 10).rounded() / 10
         guard distKm > 0 else { return nil }
 
-        // Elevation profile (downsampled to ~80, sanitised) — only if the
-        // GPX actually carried elevation data.
-        let (_, indices) = GeoMath.downsampleByDistance(geometry, n: 80)
-        let sampled = indices.map { ele[$0] ?? 0 }
-        let hasEle = sampled.contains { $0 > 0 }
-        let cleanEle = hasEle ? GeoMath.sanitizeElevations(sampled) : []
-        let stats = cleanEle.isEmpty ? (ascent: 0, descent: 0) : GeoMath.ascentDescent(cleanEle)
+        // Elevation — only if the GPX carried it.
+        let hasEle = rawEle.contains { ($0 ?? 0) > 0 }
+        // D+/D− from the FULL-resolution track: a downsampled profile smooths
+        // out real climbing and undercounts (we read ~925 m where Komoot,
+        // working off the full trace, reported ~1110 m).
+        let stats = hasEle
+            ? GeoMath.ascentDescent(GeoMath.sanitizeElevations(rawEle.map { $0 ?? 0 }))
+            : (ascent: 0, descent: 0)
+        // Chart / scrub series at ~100 m spacing (so the tooltip reads a fresh
+        // value roughly every 100 m, not every ~800 m).
+        let sampleCount = max(80, min(800, min(geometry.count, Int(distKm * 10))))
+        let (_, indices) = GeoMath.downsampleByDistance(geometry, n: sampleCount)
+        let cleanEle = hasEle ? GeoMath.sanitizeElevations(indices.map { ele[$0] ?? 0 }) : []
 
         // Waypoints: route/way points if present, else synthesise start+end.
         var waypoints: [Waypoint]
