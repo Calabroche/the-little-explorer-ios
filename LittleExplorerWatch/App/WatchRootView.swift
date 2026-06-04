@@ -44,8 +44,9 @@ private struct StartView: View {
 
     var body: some View {
         ZStack {
-            // A little fireworks show greets the rider on launch.
-            FireworksView()
+            // A fireworks show greets the rider on launch — runs for a few
+            // seconds, then settles.
+            FireworksView(intensity: 1.5, duration: 6)
                 .ignoresSafeArea()
             ScrollView {
             VStack(spacing: 12) {
