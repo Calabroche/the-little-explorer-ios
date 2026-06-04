@@ -41,6 +41,7 @@ struct AdminMetricsView: View {
             VStack(alignment: .leading, spacing: 18) {
                 kpiGrid(m.totals)
                 dauSection(m.dau)
+                perUserSection(days: m.dauDays, rows: m.dauByUser)
                 funnelSection(m.funnel)
                 syncSection(m.sync)
                 ActivityTailSection(recent: m.recent)
@@ -96,6 +97,50 @@ struct AdminMetricsView: View {
                 .frame(height: 140)
             }
         }
+    }
+
+    // MARK: Per-user activity heatmap
+
+    /// One row per user, one cell per day (30 days), shaded by how many
+    /// events they fired that day — so each rider's daily presence is kept
+    /// instead of being lost in the aggregate DAU count.
+    private func perUserSection(days: [String], rows: [APIClient.AdminMetrics.DauUser]) -> some View {
+        let maxCount = max(1, rows.flatMap { $0.days.values }.max() ?? 1)
+        return Card("Activité par utilisateur — par jour (30j)") {
+            if rows.isEmpty {
+                Text("Aucune activité sur la période.").font(.caption).foregroundStyle(AppColors.inkLight)
+            } else {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        ForEach(rows) { r in
+                            HStack(spacing: 6) {
+                                Text(r.name ?? String(r.userId.prefix(8)))
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(AppColors.ink)
+                                    .frame(width: 96, alignment: .leading)
+                                    .lineLimit(1)
+                                HStack(spacing: 2) {
+                                    ForEach(days, id: \.self) { d in
+                                        RoundedRectangle(cornerRadius: 2)
+                                            .fill(heatColor(r.days[d] ?? 0, maxCount))
+                                            .frame(width: 11, height: 11)
+                                    }
+                                }
+                                Text("\(r.total)")
+                                    .font(.system(size: 10, design: .monospaced))
+                                    .foregroundStyle(AppColors.inkMid)
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private func heatColor(_ count: Int, _ maxCount: Int) -> Color {
+        guard count > 0 else { return AppColors.creamBorder }
+        let t = 0.25 + 0.75 * min(1.0, Double(count) / Double(maxCount))
+        return AppColors.terra.opacity(t)
     }
 
     // MARK: Funnel

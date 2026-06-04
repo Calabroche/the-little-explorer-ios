@@ -521,8 +521,24 @@ actor APIClient {
             }
         }
 
+        /// One user's day-by-day activity over the 30-day window. Keeps each
+        /// rider's daily presence that the aggregate `dau` count collapses.
+        struct DauUser: Decodable, Sendable, Identifiable {
+            let userId: String
+            let name: String?
+            let total: Int
+            let days: [String: Int]      // day ("YYYY-MM-DD") → event count
+            var id: String { userId }
+            enum CodingKeys: String, CodingKey {
+                case name, total, days
+                case userId = "userId"
+            }
+        }
+
         let totals: Totals
         let dau: [DauPoint]
+        let dauDays: [String]
+        let dauByUser: [DauUser]
         let funnel: Funnel
         let events: [EventCount]
         let sync: Sync
