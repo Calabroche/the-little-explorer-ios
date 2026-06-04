@@ -96,8 +96,12 @@ fi
 # Extract the 36-char UUID from anywhere on the line — "$(NF-1)" doesn't
 # work because the model column has spaces ("iPhone 14 Pro (...)").
 DEV_LIST=$("$XCRUN" devicectl list devices 2>/dev/null)
+# NOTE: `/available/` also matches "unavailable" (a substring!), so an
+# unplugged-but-paired iPhone (e.g. a household member's) would be picked
+# first and the build would target the wrong device. Require "connected"
+# or "available" but explicitly reject "unavailable".
 DEV_ID=$(echo "$DEV_LIST" \
-    | awk '/iPhone/ && (/connected/ || /available/) {
+    | awk '/iPhone/ && !/unavailable/ && (/connected/ || /available/) {
         for (i = 1; i <= NF; i++) {
             if ($i ~ /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/) {
                 print $i
@@ -112,10 +116,15 @@ if [ -n "${DEV_ID:-}" ]; then
     rm -rf "$DERIVED_DEV"
 
     echo "▶︎ Building Debug for the iPhone…"
+    # Build for a generic iOS device, NOT `id=$DEV_ID`: devicectl's device
+    # Identifier is a different namespace from the hardware UDID xcodebuild's
+    # `-destination id=` expects, so passing it fails with "Unable to find a
+    # destination matching…". The install step below still uses $DEV_ID,
+    # which is exactly what `devicectl device install` wants.
     "$XCODEBUILD" \
         -project "$PROJECT" \
         -scheme "$SCHEME" \
-        -destination "platform=iOS,id=$DEV_ID" \
+        -destination "generic/platform=iOS" \
         -configuration Debug \
         -derivedDataPath "$DERIVED_DEV" \
         -allowProvisioningUpdates \
@@ -148,7 +157,7 @@ fi
 # devicectl returns an explicit error (10005 / kAMDDeviceLocked) —
 # clearer than the silent "couldn't be installed" iOS shows otherwise.
 WATCH_ID=$(echo "$DEV_LIST" \
-    | awk '/Watch/ && (/connected/ || /available/) {
+    | awk '/Watch/ && !/unavailable/ && (/connected/ || /available/) {
         for (i = 1; i <= NF; i++) {
             if ($i ~ /^[0-9A-F]{8}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{4}-[0-9A-F]{12}$/) {
                 print $i
