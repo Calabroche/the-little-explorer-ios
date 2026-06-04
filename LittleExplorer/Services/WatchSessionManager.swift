@@ -69,11 +69,25 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
     @MainActor
     func syncItinerariesToWatch() {
         guard let session, let itineraries else { return }
-        // Encode each Itinerary as Data so we don't have to mirror
-        // the struct in Swift dictionaries. Watch decodes back.
+        // WCSession.updateApplicationContext has a small size budget
+        // (a few hundred KB). A library of routes with full geometry +
+        // elevation easily blows past it and the push throws — so the
+        // Watch silently never sees the routes. Send a COMPACT copy:
+        // geometry downsampled to ≤100 points (plenty for the small
+        // Watch map + the picker), elevation arrays dropped. The Watch
+        // only needs to pick a route, launch it and see its line.
         let encoder = JSONEncoder()
         encoder.dateEncodingStrategy = .iso8601
-        guard let data = try? encoder.encode(itineraries.items) else {
+
+        var compact = itineraries.items.map { Self.compactForWatch($0) }
+        var data = (try? encoder.encode(compact)) ?? Data()
+        // Hard safety net: if it's still big (very long routes / many
+        // maneuvers), drop the turn-by-turn steps too and re-encode.
+        if data.count > 200_000 {
+            compact = compact.map { var c = $0; c.steps = nil; return c }
+            data = (try? encoder.encode(compact)) ?? data
+        }
+        guard !data.isEmpty else {
             Log.watch.warning("syncItinerariesToWatch: encode failed")
             return
         }
@@ -82,10 +96,31 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
                 "kind": "itineraries",
                 "data": data,
             ])
-            Log.watch.notice("Pushed \(itineraries.items.count) itineraries to Watch (\(data.count) bytes)")
+            Log.watch.notice("Pushed \(compact.count) itineraries to Watch (\(data.count) bytes)")
         } catch {
             Log.watch.error("Failed to push itineraries: \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    /// Trim an itinerary down to what the Watch actually needs (name,
+    /// distance, a coarse route line + nav steps) so the push stays
+    /// inside WCSession's application-context size budget.
+    private static func compactForWatch(_ it: Itinerary) -> Itinerary {
+        var copy = it
+        copy.geometry = downsampleCoords(it.geometry, max: 100)
+        copy.elevations = nil
+        copy.elevSampleIndices = nil
+        return copy
+    }
+
+    /// Stride-sample a coordinate list down to at most `max` points,
+    /// always keeping the last one so the route line still closes.
+    private static func downsampleCoords(_ coords: [Coordinate]?, max: Int) -> [Coordinate]? {
+        guard let coords, coords.count > max else { return coords }
+        let step = Swift.max(1, coords.count / max)
+        var out = Swift.stride(from: 0, to: coords.count, by: step).map { coords[$0] }
+        if let last = coords.last, out.last != last { out.append(last) }
+        return out
     }
 
     func send(_ message: [String: Any]) {
