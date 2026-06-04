@@ -102,6 +102,10 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
             self.isReachable = session.isReachable
             #if os(iOS)
             self.isPaired = session.isPaired
+            // Re-assert the itinerary library to the Watch now that the
+            // session is live — covers the case where the library was
+            // ready before WCSession finished activating.
+            self.syncItinerariesToWatch()
             #else
             self.isPaired = true
             #endif
@@ -109,7 +113,14 @@ final class WatchSessionManager: NSObject, WCSessionDelegate {
     }
 
     func sessionReachabilityDidChange(_ session: WCSession) {
-        Task { @MainActor in self.isReachable = session.isReachable }
+        Task { @MainActor in
+            self.isReachable = session.isReachable
+            #if os(iOS)
+            // The Watch just came back into range — push the current
+            // library so a route created while it was away shows up.
+            if session.isReachable { self.syncItinerariesToWatch() }
+            #endif
+        }
     }
 
     func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {

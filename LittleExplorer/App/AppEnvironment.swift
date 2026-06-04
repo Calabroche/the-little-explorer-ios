@@ -76,6 +76,19 @@ final class AppEnvironment {
         }
     }
 
+    /// Called when the app comes to the foreground. Reconciles the
+    /// itinerary library with the backend so a route created on the web
+    /// (or another device) lands on the phone — and, via the store's
+    /// onChange hook, gets pushed straight to the Watch — without the
+    /// user having to open the Itinerary tab first.
+    @MainActor
+    func refreshOnForeground() {
+        Task { await itineraries.syncFromServer(user: currentUser) }
+        // Re-assert the current library to the Watch in case it
+        // reconnected while we were backgrounded.
+        watch.syncItinerariesToWatch()
+    }
+
     /// Fire-and-forget HealthKit save. Each step is logged so the user
     /// can verify in Profil → Diagnostics exactly where the chain
     /// stops (most common cause of "nothing in the Health app" is

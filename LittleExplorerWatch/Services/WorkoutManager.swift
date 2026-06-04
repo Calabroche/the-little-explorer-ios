@@ -201,7 +201,7 @@ final class WorkoutManager: NSObject {
         // ActivityKit budget) when this is a planned ride — the
         // widget renders it as a route line on its mini map.
         let polyline = downsampleRoute(activeItinerary?.geometry, max: 100)
-        sessionManager?.sendRideStarted(sportLabel: "Cyclisme", routePolyline: polyline)
+        sessionManager?.sendRideStarted(sportLabel: activeSport.meta.label, routePolyline: polyline)
         logger.notice("Workout started")
     }
 
@@ -519,7 +519,7 @@ final class WorkoutManager: NSObject {
             altitude: alts,
             heartrate: hrAligned,
             distanceM: totalM,
-            sport: "cycling",
+            sport: activeSport.meta.tleSport,
             itineraryId: activeItineraryId,
         )
     }
@@ -700,15 +700,37 @@ extension WorkoutManager: CLLocationManagerDelegate {
         }
     }
 
+    /// Drift-filter thresholds, scaled to the sport's typical speed.
+    ///
+    /// The cycling-tuned gate (8 m segment, 1.5 m/s ≈ 5.4 km/h implied)
+    /// is FATAL for walking: a walk is ~1.1 m/s (4 km/h), so nearly
+    /// every fix reads as "stationary" and gets dropped — that's the
+    /// ~10× distance under-count (4 km walked → 0.45 km recorded).
+    /// On-foot sports therefore get a much lower gate.
+    private struct MotionGate { let dopplerMS: Double; let minSegmentM: Double; let minImpliedMS: Double }
+    private var motionGate: MotionGate {
+        switch activeSport {
+        case .cyclingOutdoor, .cyclingIndoor, .skiAlpine, .skiNordic, .snowboard:
+            // Fast wheeled / gliding — wide gate kills GPS drift while
+            // standing at lights without touching real movement.
+            return MotionGate(dopplerMS: 1.0, minSegmentM: 8, minImpliedMS: 1.5)
+        default:
+            // Walking / running / hiking / swim / everything else: a
+            // walk is ~1.1 m/s and a stroll ~0.7 m/s, so the gate has
+            // to sit well below that or it eats the whole ride.
+            return MotionGate(dopplerMS: 0.3, minSegmentM: 2.5, minImpliedMS: 0.35)
+        }
+    }
+
     /// True if the fix is consistent with the rider being still.
     /// See `ingest(fixes:)` for the full rationale — this is the
-    /// drift filter that prevents 60+ m of phantom distance per
-    /// minute of indoor standing.
+    /// drift filter that prevents phantom distance while standing.
     @MainActor
     private func isStationary(fix: CLLocation, dopplerSpeed: Double) -> Bool {
-        // Gold-standard signal: reliable Doppler under 1 m/s
-        // (~3.6 km/h, slower than walking) ⇒ definitely stopped.
-        if dopplerSpeed >= 0 && dopplerSpeed < 1.0 { return true }
+        let gate = motionGate
+        // Gold-standard signal: reliable Doppler under the sport's
+        // stationary threshold ⇒ definitely stopped.
+        if dopplerSpeed >= 0 && dopplerSpeed < gate.dopplerMS { return true }
 
         // Doppler unknown ⇒ infer from position delta.
         guard let last = bufferedFixes.last else {
@@ -720,8 +742,8 @@ extension WorkoutManager: CLLocationManagerDelegate {
         let segment = fix.distance(from: last)
         let dt = max(0.5, fix.timestamp.timeIntervalSince(last.timestamp))
         let impliedSpeed = segment / dt
-        // < 8 m of position change OR < 1.5 m/s implied speed
-        // ⇒ indistinguishable from drift.
-        return segment < 8 || impliedSpeed < 1.5
+        // Below the sport's minimum segment OR implied speed ⇒
+        // indistinguishable from drift.
+        return segment < gate.minSegmentM || impliedSpeed < gate.minImpliedMS
     }
 }

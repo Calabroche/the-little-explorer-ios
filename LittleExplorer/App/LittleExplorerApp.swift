@@ -4,6 +4,7 @@ import SwiftUI
 @main
 struct LittleExplorerApp: App {
     @State private var environment = AppEnvironment()
+    @Environment(\.scenePhase) private var scenePhase
 
     init() {
         // Notice-level log on every launch so the Diagnostics view
@@ -49,6 +50,9 @@ struct LittleExplorerApp: App {
                 .environment(environment)
                 .preferredColorScheme(environment.darkModeOverride)
                 .tint(AppColors.terra)
+                .onChange(of: scenePhase) { _, phase in
+                    if phase == .active { environment.refreshOnForeground() }
+                }
         }
     }
 }

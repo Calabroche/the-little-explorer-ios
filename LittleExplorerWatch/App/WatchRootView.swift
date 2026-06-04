@@ -51,12 +51,10 @@ private struct StartView: View {
                 Text("Little Explorer")
                     .font(.headline)
 
-                Button {
-                    onStart {
-                        await workoutManager.start()
-                    }
+                NavigationLink {
+                    SportPickerView(onStart: onStart)
                 } label: {
-                    Label("Start ride", systemImage: "play.fill")
+                    Label("Démarrer une sortie", systemImage: "play.fill")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
@@ -88,6 +86,39 @@ private struct StartView: View {
             }
             .padding()
         }
+    }
+}
+
+/// Sport chooser — Apple-Workout-app style list of every sport the
+/// rider can track. Tapping a row starts the ride with that sport
+/// (routed through the same 3-2-1 countdown gate as everything else).
+private struct SportPickerView: View {
+    @Environment(WorkoutManager.self) private var workoutManager
+    @Environment(\.dismiss) private var dismiss
+    let onStart: (@escaping () async -> Void) -> Void
+
+    var body: some View {
+        List {
+            ForEach(WatchSport.allCases) { sport in
+                Button {
+                    // Pop back to the root so the countdown shows there,
+                    // not stacked on top of this List.
+                    dismiss()
+                    onStart {
+                        await workoutManager.start(sport: sport)
+                    }
+                } label: {
+                    Label {
+                        Text(sport.meta.label)
+                    } icon: {
+                        Image(systemName: sport.meta.symbol)
+                            .foregroundStyle(.tint)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+        .navigationTitle("Sport")
     }
 }
 
