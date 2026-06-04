@@ -6,6 +6,7 @@ import SwiftUI
 struct FeatureNote: Identifiable {
     let id: String
     let icon: String
+    let date: String   // "YYYY-MM-DD" — drives the today/week/month grouping
     let title: String
     let body: String
 }
@@ -15,6 +16,7 @@ enum FeatureNotes {
         FeatureNote(
             id: "ravito-2026-06",
             icon: "💧",
+            date: "2026-06-04",
             title: "Points de ravitaillement sur ton parcours",
             body: "Sur la carte du planificateur, ouvre la carte en plein écran et active le bouton « Ravito » : l'app repère le long de ton trajet les points d'eau (fontaines, robinets, cimetières) et les commerces où manger ou acheter de l'eau (supermarchés, supérettes, boulangeries). Plus jamais à sec en pleine sortie.",
         ),

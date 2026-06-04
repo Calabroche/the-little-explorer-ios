@@ -110,6 +110,7 @@ struct BrandLockup: View {
 struct BrandHeader: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(AppRouter.self) private var router
+    @State private var showWhatsNew = false
 
     var body: some View {
         HStack(alignment: .center) {
@@ -122,6 +123,17 @@ struct BrandHeader: View {
             .accessibilityLabel("Retour aux activités")
 
             Spacer(minLength: 12)
+            // "What's new" — opens the changelog grouped by recency.
+            Button { showWhatsNew = true } label: {
+                Text("i")
+                    .font(.system(size: 15, design: .serif).weight(.bold).italic())
+                    .foregroundStyle(AppColors.terra)
+                    .frame(width: 32, height: 32)
+                    .background(AppColors.surface, in: Circle())
+                    .overlay(Circle().stroke(AppColors.creamBorder, lineWidth: 1))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Nouveautés")
             SignedInUserPill(profile: environment.session.profile) {
                 router.selectedTab = .profile
             }
@@ -129,6 +141,7 @@ struct BrandHeader: View {
         .padding(.horizontal, 16)
         .padding(.top, 4)
         .padding(.bottom, 10)
+        .sheet(isPresented: $showWhatsNew) { WhatsNewView() }
     }
 }
 
