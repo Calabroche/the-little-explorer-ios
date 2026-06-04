@@ -39,6 +39,12 @@ struct ItineraryView: View {
     @State private var pendingTap: CLLocationCoordinate2D?
     @State private var pendingResult: CommuneResult?
     @State private var pendingLoading = false
+    // Resupply points (water / food) along the route — lazily fetched when
+    // the rider enables the "Ravito" toggle on the full-screen map.
+    @State private var showPois = false
+    @State private var pois: [APIClient.RoutePoi] = []
+    @State private var poisLoading = false
+    @State private var poiFetchedKey = ""
 
     var body: some View {
         @Bindable var planner = planner
@@ -274,6 +280,19 @@ struct ItineraryView: View {
             MapReader { proxy in
                 Map(position: $cameraPosition) {
                     routeMapContent(planner)
+                    // Resupply points (water / food) along the route.
+                    if showPois {
+                        ForEach(pois) { poi in
+                            Annotation("", coordinate: poi.coordinate.clLocation) {
+                                ZStack {
+                                    Circle().fill(poiColor(poi.cat)).frame(width: 14, height: 14)
+                                        .overlay(Circle().stroke(Color.white, lineWidth: 1.5))
+                                    Text(poiIcon(poi.cat)).font(.system(size: 9))
+                                }
+                            }
+                            .annotationTitles(.hidden)
+                        }
+                    }
                     // Pending tapped point — a green halo so the user sees
                     // exactly where the new stop will land.
                     if let tap = pendingTap {
@@ -319,6 +338,29 @@ struct ItineraryView: View {
             .buttonStyle(.plain)
             .padding(16)
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+
+            // Ravito toggle (top-leading) — water + food points along the route.
+            if let geom = planner.geometry, geom.count > 1 {
+                Button {
+                    showPois.toggle()
+                    if showPois { Task { await loadPois(geom) } }
+                } label: {
+                    HStack(spacing: 5) {
+                        Text("💧").font(.system(size: 13))
+                        Text("Ravito").font(.system(size: 13, weight: .semibold))
+                        if showPois {
+                            if poisLoading { Text("…") } else { Text("· \(pois.count)") }
+                        }
+                    }
+                    .foregroundStyle(showPois ? .white : AppColors.ink)
+                    .padding(.horizontal, 11).padding(.vertical, 8)
+                    .background(showPois ? AnyShapeStyle(AppColors.terra) : AnyShapeStyle(.regularMaterial),
+                                in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .padding(16)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
 
             // Hint when nothing is pending, or the confirmation card.
             if let tap = pendingTap {
@@ -391,6 +433,40 @@ struct ItineraryView: View {
         pendingTap = nil
         pendingResult = nil
         pendingLoading = false
+    }
+
+    // MARK: - Resupply points
+
+    private func poiColor(_ cat: String) -> Color {
+        switch cat {
+        case "water":       return Color(red: 0.24, green: 0.65, blue: 0.85)
+        case "supermarket": return Color(red: 0.31, green: 0.60, blue: 0.33)
+        case "convenience": return Color(red: 0.18, green: 0.64, blue: 0.60)
+        case "bakery":      return Color(red: 0.85, green: 0.56, blue: 0.24)
+        default:            return AppColors.inkMid
+        }
+    }
+
+    private func poiIcon(_ cat: String) -> String {
+        switch cat {
+        case "water":       return "💧"
+        case "supermarket": return "🛒"
+        case "convenience": return "🏪"
+        case "bakery":      return "🥐"
+        default:            return "📍"
+        }
+    }
+
+    /// Fetch resupply points for the given geometry, keyed so we don't
+    /// re-hit Overpass for a route we've already loaded.
+    private func loadPois(_ geometry: [Coordinate]) async {
+        let key = "\(geometry.count):\(geometry.first?.lat ?? 0),\(geometry.last?.lat ?? 0)"
+        if poiFetchedKey == key, !pois.isEmpty { return }
+        poiFetchedKey = key
+        poisLoading = true
+        defer { poisLoading = false }
+        let fetched = (try? await environment.api.routePois(geometry: geometry)) ?? []
+        pois = fetched
     }
 
     // MARK: - Stats row

@@ -643,6 +643,27 @@ actor APIClient {
         return try await post("/api/route-ways", body: Body(waypoints: waypoints.map { [$0.lat, $0.lng] }))
     }
 
+    // MARK: - Resupply points (water / food) along a route
+
+    /// One OSM place near the route where a rider can refill water or grab
+    /// food. `cat` is "water" | "supermarket" | "convenience" | "bakery".
+    struct RoutePoi: Decodable, Sendable, Identifiable {
+        let cat: String
+        let name: String?
+        let lat: Double
+        let lng: Double
+        var id: String { "\(cat):\(lat),\(lng)" }
+        var coordinate: Coordinate { Coordinate(lat: lat, lng: lng) }
+    }
+
+    /// Water + food resupply points within ~120 m of the route geometry.
+    func routePois(geometry: [Coordinate]) async throws -> [RoutePoi] {
+        struct Body: Encodable { let geometry: [[Double]] }
+        struct Resp: Decodable { let pois: [RoutePoi] }
+        let r: Resp = try await post("/api/route-pois", body: Body(geometry: geometry.map { [$0.lat, $0.lng] }))
+        return r.pois
+    }
+
     func bikeRoute(waypoints: [Coordinate], steps: Bool = false) async throws -> BikeRoute {
         struct Body: Encodable {
             let waypoints: [[Double]]
