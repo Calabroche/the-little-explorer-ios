@@ -15,6 +15,8 @@ struct FeedView: View {
                 content(env: env)
             }
             .background(AppColors.cream)
+            // "What's new" popup — surfaces the latest undismissed feature.
+            .overlay { FeatureAnnouncementView() }
             .toolbar(.hidden, for: .navigationBar)
             .task {
                 await env.activityStore.load(user: env.currentUser)
