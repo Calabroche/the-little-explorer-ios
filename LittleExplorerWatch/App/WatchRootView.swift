@@ -43,11 +43,13 @@ private struct StartView: View {
     let onStart: (@escaping () async -> Void) -> Void
 
     var body: some View {
-        ScrollView {
+        ZStack {
+            // A little fireworks show greets the rider on launch.
+            FireworksView()
+                .ignoresSafeArea()
+            ScrollView {
             VStack(spacing: 12) {
-                Image(systemName: "bicycle")
-                    .font(.system(size: 36))
-                    .foregroundStyle(.tint)
+                PedalingCyclist()
                 Text("Little Explorer")
                     .font(.headline)
 
@@ -85,6 +87,7 @@ private struct StartView: View {
                 }
             }
             .padding()
+            }
         }
     }
 }
