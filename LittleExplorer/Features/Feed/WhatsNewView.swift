@@ -10,10 +10,10 @@ struct WhatsNewView: View {
         case today, week, month, earlier
         var label: String {
             switch self {
-            case .today:   return "Nouveauté du jour"
-            case .week:    return "Nouveautés de la semaine"
-            case .month:   return "Nouveautés du mois"
-            case .earlier: return "Avant"
+            case .today:   return "Aujourd'hui"
+            case .week:    return "7 derniers jours"
+            case .month:   return "30 derniers jours"
+            case .earlier: return "Plus tôt"
             }
         }
     }
@@ -32,7 +32,7 @@ struct WhatsNewView: View {
         let days = cal.dateComponents([.day], from: cal.startOfDay(for: d), to: cal.startOfDay(for: Date())).day ?? 0
         if days <= 0 { return .today }
         if days <= 7 { return .week }
-        if days <= 31 { return .month }
+        if days <= 30 { return .month }
         return .earlier
     }
 

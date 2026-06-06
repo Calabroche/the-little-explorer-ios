@@ -12,14 +12,42 @@ struct FeatureNote: Identifiable {
 }
 
 enum FeatureNotes {
+    // Newest first. The launch popup only announces the FIRST entry; the
+    // "i" panel lists them all, grouped by recency.
     static let all: [FeatureNote] = [
-        FeatureNote(
-            id: "ravito-2026-06",
-            icon: "💧",
-            date: "2026-06-04",
+        FeatureNote(id: "ravito-2026-06", icon: "💧", date: "2026-06-04",
             title: "Points de ravitaillement sur ton parcours",
-            body: "Sur la carte du planificateur, ouvre la carte en plein écran et active le bouton « Ravito » : l'app repère le long de ton trajet les points d'eau (fontaines, robinets, cimetières) et les commerces où manger ou acheter de l'eau (supermarchés, supérettes, boulangeries). Plus jamais à sec en pleine sortie.",
-        ),
+            body: "Sur la carte plein écran du planificateur, active le bouton « Ravito » : l'app repère le long de ton trajet les points d'eau (fontaines, robinets, cimetières) et les commerces où manger ou acheter de l'eau (supermarchés, supérettes, boulangeries)."),
+        FeatureNote(id: "onboarding-favsport-2026-06", icon: "🚦", date: "2026-06-04",
+            title: "Onboarding : choisis ton sport de prédilection",
+            body: "Plus de choix de sports à l'inscription, ton sport favori s'affiche en premier, et l'étape poids/vélo est sautée si tu ne fais pas de vélo."),
+        FeatureNote(id: "power-charge-2026-06", icon: "⚡", date: "2026-06-04",
+            title: "Section « Puissance & Charge »",
+            body: "Tes records de puissance, ton estimation de FTP et l'analyse de charge (TSS) sont réunis sur une page dédiée."),
+        FeatureNote(id: "fireworks-2026-06", icon: "🎆", date: "2026-06-04",
+            title: "Un feu d'artifice au lancement",
+            body: "Pour le plaisir : une animation festive accueille l'ouverture de l'app, et un cycliste qui pédale sur l'écran d'accueil de la Watch."),
+        FeatureNote(id: "planner-clickmap-2026-06", icon: "📍", date: "2026-06-03",
+            title: "Ajoute un point en touchant la carte",
+            body: "Touche la carte du planificateur : une confirmation s'affiche et le point exact s'ajoute à ton itinéraire."),
+        FeatureNote(id: "planner-speed-stats-2026-06", icon: "⏱️", date: "2026-06-03",
+            title: "Vitesse modifiable + stats du parcours",
+            body: "Change ta vitesse de croisière et le temps estimé se recalcule. Distance, temps, D+/D− et difficulté en un coup d'œil."),
+        FeatureNote(id: "elevation-grade-2026-06", icon: "⛰️", date: "2026-06-03",
+            title: "Profil d'altitude coloré par pente",
+            body: "Le profil est coloré selon la pente (vert/jaune/orange/rouge) avec une résolution de 100 m."),
+        FeatureNote(id: "save-routes-2026-05", icon: "💾", date: "2026-05-29",
+            title: "Sauvegarde & synchro de tes itinéraires",
+            body: "Tes parcours sont sauvegardés sur ton compte et synchronisés entre le web, l'iPhone et l'Apple Watch."),
+        FeatureNote(id: "strava-resync-2026-06", icon: "🔄", date: "2026-06-02",
+            title: "Re-synchro Strava en un bouton",
+            body: "Un seul bouton importe tes activités et les tracés GPS / graphes (FC, vitesse, puissance, altitude)."),
+        FeatureNote(id: "sports-coverage-2026-06", icon: "🏅", date: "2026-06-02",
+            title: "Tous tes sports Strava couverts",
+            body: "Vélo, course, rando, marche, nage, ski, renfo… 25 types d'activité gérés, avec un sélecteur adapté à ce que tu pratiques."),
+        FeatureNote(id: "service-log-2026-05", icon: "🔧", date: "2026-05-28",
+            title: "Carnet d'entretien du matériel",
+            body: "Suis l'entretien de ton vélo et l'usure des pièces dans la section Matériel."),
     ]
 }
 
@@ -44,8 +72,10 @@ struct FeatureAnnouncementView: View {
     }
 
     private func pick() {
+        // Only the NEWEST note can pop up — older/backfilled entries live in
+        // the "i" panel and must never resurface as launch popups.
         let seen = Set(UserDefaults.standard.stringArray(forKey: Self.seenKey) ?? [])
-        note = FeatureNotes.all.first { !seen.contains($0.id) }
+        if let newest = FeatureNotes.all.first, !seen.contains(newest.id) { note = newest }
     }
 
     private func dismiss(_ n: FeatureNote) {
