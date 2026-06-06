@@ -60,6 +60,9 @@ struct WelcomeView: View {
                         }
                     }
 
+                    // Why we beat Strava — the pitch, right on the welcome screen.
+                    WhyBetterThanStrava()
+
                     NavigationLink {
                         GuideView()
                     } label: {

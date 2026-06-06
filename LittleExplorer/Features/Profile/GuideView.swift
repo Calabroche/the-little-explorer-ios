@@ -11,6 +11,7 @@ struct GuideView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 header
+                WhyBetterThanStrava()
                 ForEach(GuideContent.sections) { section in
                     SectionCard(section: section)
                 }

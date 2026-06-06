@@ -40,6 +40,7 @@ struct WhatsNewView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
+                    WhyBetterThanStrava()
                     ForEach(Bucket.allCases, id: \.rawValue) { b in
                         let notes = FeatureNotes.all.filter { bucket(for: $0.date) == b }
                         if !notes.isEmpty {
