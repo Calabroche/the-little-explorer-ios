@@ -83,6 +83,53 @@ struct ActivityDetailView: View {
         return chartData.min(by: { abs($0.distKm - selectedDist) < abs($1.distKm - selectedDist) })
     }
 
+    // MARK: - Grade-adjusted pace (running)
+
+    private struct GapResult { let gap: Double; let actual: Double }
+
+    /// Flat-equivalent pace via Minetti's running energy-cost model — weights
+    /// each segment's time by C(flat)/C(grade). Strava paywalls GAP.
+    private var gradeAdjustedPace: GapResult? {
+        guard activity.type == "running",
+              let alt = activity.altitude, let dist = activity.distanceM, let time = activity.timeS else { return nil }
+        let len = min(alt.count, dist.count, time.count)
+        if len < 10 { return nil }
+        var gapTime = 0.0, totalDist = 0.0, totalTime = 0.0
+        for i in 1..<len {
+            let dD = dist[i] - dist[i - 1], dT = time[i] - time[i - 1], dA = alt[i] - alt[i - 1]
+            if dD <= 0 || dT <= 0 || dT > 20 { continue }
+            gapTime += dT * (3.6 / minettiCost(dA / dD))
+            totalDist += dD; totalTime += dT
+        }
+        if totalDist < 500 { return nil }
+        return GapResult(gap: gapTime / (totalDist / 1000), actual: totalTime / (totalDist / 1000))
+    }
+
+    private func minettiCost(_ grade: Double) -> Double {
+        let i = max(-0.45, min(0.45, grade))
+        return 155.4 * pow(i, 5) - 30.4 * pow(i, 4) - 43.3 * pow(i, 3) + 46.3 * pow(i, 2) + 19.5 * i + 3.6
+    }
+    private func paceStr(_ s: Double) -> String { let x = Int(s.rounded()); return String(format: "%d:%02d", x / 60, x % 60) }
+
+    private func gapCard(_ r: GapResult) -> some View {
+        let delta = r.actual - r.gap
+        return cardWrapper(label: "ALLURE AJUSTÉE À LA PENTE") {
+            HStack(alignment: .firstTextBaseline, spacing: 16) {
+                (Text(paceStr(r.gap)).font(.system(size: 28, design: .serif).weight(.heavy)).foregroundColor(AppColors.ink)
+                    + Text(" /km").font(.system(size: 12)).foregroundColor(AppColors.inkLight))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Allure réelle : \(paceStr(r.actual))/km").font(.system(size: 12)).foregroundStyle(AppColors.inkMid)
+                    Text(abs(delta) < 1 ? "Parcours plat — pas d'ajustement."
+                         : delta > 0 ? "\(paceStr(delta))/km plus rapide à plat — vallonné."
+                         : "\(paceStr(-delta))/km plus lent à plat — descente.")
+                        .font(.system(size: 11)).foregroundStyle(AppColors.inkLight)
+                    Text("Strava fait payer ça.").font(.system(size: 10)).foregroundStyle(AppColors.inkLight)
+                }
+                Spacer(minLength: 0)
+            }
+        }
+    }
+
     var body: some View {
         // DIAGNOSTIC: log every body computation so the user can see in
         // Diagnostics which sections render before the crash. The
@@ -94,6 +141,7 @@ struct ActivityDetailView: View {
                 header
                 topStatsCard
                 if activity.np != nil { ftpCard }
+                if let gap = gradeAdjustedPace { gapCard(gap) }
 
                 // Charts are gated behind `!chartData.isEmpty` so a
                 // very short Track ride (e.g. a 10 m shakedown that

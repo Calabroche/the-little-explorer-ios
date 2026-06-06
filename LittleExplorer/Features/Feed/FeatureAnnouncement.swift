@@ -16,6 +16,9 @@ enum FeatureNotes {
     // Newest first. The launch popup only announces the FIRST entry; the
     // "i" panel lists them all, grouped by recency.
     static let all: [FeatureNote] = [
+        FeatureNote(id: "running-gap-2026-06", icon: "📉", date: "2026-06-06", sport: "running",
+            title: "Allure ajustée à la pente (course)",
+            body: "Sur l'analyse d'une sortie course, l'app calcule ton allure « à plat équivalent » en corrigeant le dénivelé (modèle de Minetti). Compare tes sorties vallonnées et plates à armes égales. Strava fait payer ça."),
         FeatureNote(id: "running-predictor-2026-06", icon: "🏁", date: "2026-06-06", sport: "running",
             title: "Prédicteur de chrono + allures (course)",
             body: "Prévois tes temps sur 5 km / 10 km / semi / marathon depuis ta meilleure sortie récente, et obtiens tes allures d'entraînement (endurance, seuil, VO2…). Strava fait payer ça — ici c'est gratuit."),
