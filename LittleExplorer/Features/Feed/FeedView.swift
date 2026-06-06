@@ -247,6 +247,7 @@ private struct FeedScrollView: View {
                     Last5StatsView(activities: filtered).padding(.horizontal, 16)
                     if env.selectedSport == .running {
                         RunPaceZonesView(activities: filtered).padding(.horizontal, 16)
+                        RaceProjectorView(activities: filtered)
                     }
                     // PersonalRecords + TrainingProgramView moved out
                     // of the Feed → now live in Analyses → Performances.

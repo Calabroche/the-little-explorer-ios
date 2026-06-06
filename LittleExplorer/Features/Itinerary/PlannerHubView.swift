@@ -145,7 +145,8 @@ struct PlannerHubView: View {
     private var content: some View {
         switch selected {
         case .itineraire:
-            ItineraryView()
+            // Running routes on the OSRM foot profile (footpaths allowed).
+            ItineraryView(routingProfile: category == .footing ? "foot" : "bike")
         case .plan:
             NavigationStack {
                 TrainingPlanView(category: category)

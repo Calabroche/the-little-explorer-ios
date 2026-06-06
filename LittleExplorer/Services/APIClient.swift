@@ -664,14 +664,18 @@ actor APIClient {
         return r.pois
     }
 
-    func bikeRoute(waypoints: [Coordinate], steps: Bool = false) async throws -> BikeRoute {
+    /// `profile` is "bike" (default) or "foot" (running — OSRM foot profile,
+    /// allows footpaths).
+    func bikeRoute(waypoints: [Coordinate], steps: Bool = false, profile: String = "bike") async throws -> BikeRoute {
         struct Body: Encodable {
             let waypoints: [[Double]]
             let steps: Bool
+            let profile: String
         }
         let body = Body(
             waypoints: waypoints.map { [$0.lat, $0.lng] },
             steps: steps,
+            profile: profile,
         )
         return try await post("/api/route-bike", body: body)
     }

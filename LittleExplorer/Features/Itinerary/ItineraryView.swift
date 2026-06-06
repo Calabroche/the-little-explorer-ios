@@ -5,6 +5,8 @@ import UniformTypeIdentifiers
 /// Replaces the v0 PlannerView with the full Itinerary builder.
 struct ItineraryView: View {
     @Environment(AppEnvironment.self) private var environment
+    /// OSRM routing profile: "bike" (default) or "foot" (running).
+    var routingProfile: String = "bike"
     @State private var planner = PlannerState()
     /// Read the shared library from the environment so saves push to
     /// the backend (Phase A) and become visible to the Watch (Phase B)
@@ -128,6 +130,7 @@ struct ItineraryView: View {
                 Text(importError ?? "")
             }
             .onAppear {
+                planner.routingProfile = routingProfile
                 library.load(user: environment.currentUser)
                 // Phase A: reconcile with the backend on every appear
                 // so a save made on the web (or on another device)

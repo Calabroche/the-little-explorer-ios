@@ -16,6 +16,12 @@ enum FeatureNotes {
     // Newest first. The launch popup only announces the FIRST entry; the
     // "i" panel lists them all, grouped by recency.
     static let all: [FeatureNote] = [
+        FeatureNote(id: "running-predictor-2026-06", icon: "🏁", date: "2026-06-06", sport: "running",
+            title: "Prédicteur de chrono + allures (course)",
+            body: "Prévois tes temps sur 5 km / 10 km / semi / marathon depuis ta meilleure sortie récente, et obtiens tes allures d'entraînement (endurance, seuil, VO2…). Strava fait payer ça — ici c'est gratuit."),
+        FeatureNote(id: "running-planner-2026-06", icon: "🏃", date: "2026-06-06", sport: "running",
+            title: "Planificateur & plan d'entraînement pour la course",
+            body: "Le planificateur d'itinéraire (profil piéton, + points d'eau et surfaces) et le plan d'entraînement sont désormais accessibles en course, pas seulement en vélo."),
         FeatureNote(id: "ravito-2026-06", icon: "💧", date: "2026-06-04", sport: "all",
             title: "Points de ravitaillement sur ton parcours",
             body: "Sur la carte plein écran du planificateur, active le bouton « Ravito » : l'app repère le long de ton trajet les points d'eau (fontaines, robinets, cimetières) et les commerces où manger ou acheter de l'eau (supermarchés, supérettes, boulangeries)."),

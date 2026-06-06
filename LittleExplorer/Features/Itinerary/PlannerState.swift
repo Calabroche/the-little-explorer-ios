@@ -11,6 +11,8 @@ final class PlannerState {
     var loop: Bool = false
     var name: String = ""
     var activeId: String?
+    /// OSRM routing profile: "bike" (default) or "foot" (running).
+    var routingProfile: String = "bike"
 
     // Cached routing result (refreshed when waypoints change).
     var geometry: [Coordinate]?
@@ -153,7 +155,7 @@ final class PlannerState {
         routing = true
         routeError = nil
         do {
-            let route = try await api.bikeRoute(waypoints: eff.map(\.coordinate), steps: false)
+            let route = try await api.bikeRoute(waypoints: eff.map(\.coordinate), steps: false, profile: routingProfile)
             geometry = route.geometry
             distanceMeters = route.distance
             durationSeconds = route.duration
