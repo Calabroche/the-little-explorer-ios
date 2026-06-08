@@ -141,7 +141,7 @@ struct BrandHeader: View {
         .padding(.horizontal, 16)
         .padding(.top, 4)
         .padding(.bottom, 10)
-        .sheet(isPresented: $showWhatsNew) { WhatsNewView() }
+        .sheet(isPresented: $showWhatsNew) { WhatsNewView(initialRunning: environment.selectedSport == .running) }
     }
 }
 
