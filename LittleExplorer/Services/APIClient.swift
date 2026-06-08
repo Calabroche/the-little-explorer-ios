@@ -664,6 +664,31 @@ actor APIClient {
         return r.pois
     }
 
+    // MARK: - Cols / summits near a departure
+
+    /// A named mountain pass (`kind == "col"`) or summit (`kind == "sommet"`)
+    /// near the departure, with elevation, straight-line distance and commune.
+    struct Col: Decodable, Sendable, Identifiable {
+        let name: String
+        let kind: String        // "col" | "sommet"
+        let lat: Double
+        let lng: Double
+        let ele: Int?           // summit elevation (m), when known
+        let distKm: Double      // straight-line distance from the departure
+        let city: String?       // commune the col sits in
+        var id: String { "col:\(lat),\(lng)" }
+        var coordinate: Coordinate { Coordinate(lat: lat, lng: lng) }
+        var isSummit: Bool { kind == "sommet" }
+    }
+
+    /// Named cols + summits within `radiusKm` of (lat, lng), nearest first.
+    func cols(lat: Double, lng: Double, radiusKm: Double) async throws -> [Col] {
+        struct Body: Encodable { let lat: Double; let lng: Double; let radiusKm: Double }
+        struct Resp: Decodable { let cols: [Col] }
+        let r: Resp = try await post("/api/cols", body: Body(lat: lat, lng: lng, radiusKm: radiusKm))
+        return r.cols
+    }
+
     /// `profile` is "bike" (default) or "foot" (running — OSRM foot profile,
     /// allows footpaths).
     func bikeRoute(waypoints: [Coordinate], steps: Bool = false, profile: String = "bike") async throws -> BikeRoute {

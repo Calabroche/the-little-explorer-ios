@@ -16,6 +16,9 @@ enum FeatureNotes {
     // Newest first. The launch popup only announces the FIRST entry; the
     // "i" panel lists them all, grouped by recency.
     static let all: [FeatureNote] = [
+        FeatureNote(id: "cols-picker-2026-06", icon: "⛰️", date: "2026-06-08", sport: "cycling",
+            title: "Cols à proximité de ton départ",
+            body: "Depuis un point de départ, le planificateur liste les cols et monts accessibles (10, 15, 25 ou 50 km), du plus proche au plus loin, avec leur commune et leur altitude. Ils s'affichent aussi sur la carte : touche un sommet pour l'ajouter à ton parcours ou l'enlever."),
         FeatureNote(id: "running-gap-2026-06", icon: "📉", date: "2026-06-06", sport: "running",
             title: "Allure ajustée à la pente (course)",
             body: "Sur l'analyse d'une sortie course, l'app calcule ton allure « à plat équivalent » en corrigeant le dénivelé (modèle de Minetti). Compare tes sorties vallonnées et plates à armes égales. Strava fait payer ça."),

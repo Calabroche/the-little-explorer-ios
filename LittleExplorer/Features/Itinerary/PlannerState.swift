@@ -1,5 +1,6 @@
 import Foundation
 import Observation
+import CoreLocation
 
 /// Drives the Itinerary builder: waypoints, target distance, loop flag,
 /// cached routing + elevation. Mirrors the web's ItineraryPage state.
@@ -13,6 +14,11 @@ final class PlannerState {
     var activeId: String?
     /// OSRM routing profile: "bike" (default) or "foot" (running).
     var routingProfile: String = "bike"
+
+    // Cols / summits near the departure (cycling only).
+    var colRadiusKm: Double = 25
+    var cols: [APIClient.Col] = []
+    var colsLoading: Bool = false
 
     // Cached routing result (refreshed when waypoints change).
     var geometry: [Coordinate]?
@@ -37,6 +43,8 @@ final class PlannerState {
 
     private var routingTask: Task<Void, Never>?
     private var elevationTask: Task<Void, Never>?
+    private var colsTask: Task<Void, Never>?
+    private var colsFetchedKey = ""
 
     init(api: APIClient = .shared) {
         self.api = api
@@ -108,6 +116,8 @@ final class PlannerState {
         descent = 0
         name = ""
         activeId = nil
+        cols = []
+        colsFetchedKey = ""
     }
 
     func setLoop(_ loop: Bool) {
@@ -118,6 +128,82 @@ final class PlannerState {
     func setTargetKm(_ km: Double) {
         self.targetKm = km
         // Target only affects auto-extend; no need to re-route on every drag.
+    }
+
+    // MARK: - Cols near the departure (cycling only)
+
+    func setColRadius(_ km: Double) {
+        guard km != colRadiusKm else { return }
+        colRadiusKm = km
+        scheduleColsRefresh(force: true)
+    }
+
+    /// Refetch the cols around the departure (waypoint #1) into `cols`. Cycling
+    /// only; debounced + cached by departure + radius so it doesn't re-hit the
+    /// API on every keystroke. The backend caches successful lookups, so this is
+    /// cheap once an area is warm.
+    func scheduleColsRefresh(force: Bool = false) {
+        colsTask?.cancel()
+        guard routingProfile == "bike", let dep = waypoints.first else {
+            cols = []
+            colsFetchedKey = ""
+            return
+        }
+        let key = String(format: "%.3f,%.3f,%.0f", dep.lat, dep.lng, colRadiusKm)
+        if !force && key == colsFetchedKey && !cols.isEmpty { return }
+        let lat = dep.lat, lng = dep.lng, radius = colRadiusKm
+        colsTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(250))
+            guard let self, !Task.isCancelled else { return }
+            await self.loadCols(lat: lat, lng: lng, radius: radius, key: key)
+        }
+    }
+
+    private func loadCols(lat: Double, lng: Double, radius: Double, key: String) async {
+        colsLoading = true
+        let result = (try? await api.cols(lat: lat, lng: lng, radiusKm: radius)) ?? []
+        guard !Task.isCancelled else { colsLoading = false; return }
+        cols = result
+        if !result.isEmpty { colsFetchedKey = key }
+        colsLoading = false
+    }
+
+    /// Index of the waypoint that represents a col: exact synthetic code, or —
+    /// for routes built before the cols feature — any stop within ~250 m. Mirrors
+    /// the web's proximity matching.
+    func colWaypointIndex(_ col: APIClient.Col) -> Int? {
+        let code = String(format: "col:%.5f,%.5f", col.lat, col.lng)
+        if let exact = waypoints.firstIndex(where: { $0.code == code }) { return exact }
+        let target = CLLocation(latitude: col.lat, longitude: col.lng)
+        var best: Int? = nil
+        var bestD = 250.0
+        for (i, w) in waypoints.enumerated() {
+            let d = CLLocation(latitude: w.lat, longitude: w.lng).distance(from: target)
+            if d < bestD { bestD = d; best = i }
+        }
+        return best
+    }
+
+    func isColSelected(_ col: APIClient.Col) -> Bool { colWaypointIndex(col) != nil }
+
+    /// Add a col to the route, or remove it (proximity-aware) if already in.
+    func toggleCol(_ col: APIClient.Col) {
+        if let idx = colWaypointIndex(col) {
+            remove(at: idx)
+            return
+        }
+        let wp = Waypoint(
+            name: col.name,
+            code: String(format: "col:%.5f,%.5f", col.lat, col.lng),
+            postal: col.city,
+            lat: col.lat,
+            lng: col.lng,
+            label: col.ele.map { "\(col.name) - \($0) m" } ?? col.name,
+            city: col.city,
+            kind: .locality,
+        )
+        waypoints.append(wp)
+        scheduleRouteRefresh()
     }
 
     /// Return the waypoints actually sent to OSRM — appends start at end
@@ -136,6 +222,9 @@ final class PlannerState {
             guard !Task.isCancelled else { return }
             await self?.computeRoute()
         }
+        // The departure may have changed → refresh the nearby cols too (cheap,
+        // debounced + cached).
+        scheduleColsRefresh()
     }
 
     private func computeRoute() async {

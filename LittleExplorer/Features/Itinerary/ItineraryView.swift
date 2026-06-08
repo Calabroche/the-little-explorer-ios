@@ -76,6 +76,9 @@ struct ItineraryView: View {
                             .padding(.horizontal, 16)
                     }
 
+                    colsSection(planner: planner)
+                        .padding(.horizontal, 16)
+
                     if !planner.elevSeries.isEmpty || planner.elevationLoading {
                         // Full-bleed (no horizontal padding) so the profile
                         // always spans the screen width — it was randomly
@@ -131,6 +134,7 @@ struct ItineraryView: View {
             }
             .onAppear {
                 planner.routingProfile = routingProfile
+                planner.scheduleColsRefresh()
                 library.load(user: environment.currentUser)
                 // Phase A: reconcile with the backend on every appear
                 // so a save made on the web (or on another device)
@@ -200,6 +204,96 @@ struct ItineraryView: View {
         }
     }
 
+    // MARK: - Cols à proximité
+
+    /// Nearby cols / summits around the departure (cycling only). Mirrors the
+    /// web: radius selector + a tappable list, in sync with the map pins.
+    @ViewBuilder
+    private func colsSection(planner: PlannerState) -> some View {
+        if planner.routingProfile == "bike", !planner.waypoints.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 8) {
+                    Text("COLS À PROXIMITÉ")
+                        .font(.system(size: 12, weight: .semibold)).tracking(1)
+                        .foregroundStyle(AppColors.inkMid)
+                    if planner.colsLoading {
+                        ProgressView().scaleEffect(0.7)
+                    }
+                    Spacer()
+                    HStack(spacing: 5) {
+                        ForEach([10.0, 15, 25, 50], id: \.self) { r in
+                            Button {
+                                planner.setColRadius(r)
+                            } label: {
+                                Text("\(Int(r))")
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .padding(.vertical, 4).padding(.horizontal, 9)
+                                    .background(
+                                        planner.colRadiusKm == r ? AnyShapeStyle(AppColors.terra) : AnyShapeStyle(AppColors.creamDark),
+                                        in: Capsule())
+                                    .foregroundStyle(planner.colRadiusKm == r ? .white : AppColors.inkMid)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+
+                if planner.cols.isEmpty {
+                    Text(planner.colsLoading ? "Recherche des cols…" : "Aucun col trouvé dans ce rayon.")
+                        .font(.system(size: 12)).foregroundStyle(AppColors.inkLight)
+                        .padding(.vertical, 4)
+                } else {
+                    Text("Aussi sur la carte. Touche pour ajouter ou retirer.")
+                        .font(.system(size: 11)).foregroundStyle(AppColors.inkLight)
+                    VStack(spacing: 6) {
+                        ForEach(planner.cols.prefix(40)) { col in
+                            colRow(col, planner: planner)
+                        }
+                    }
+                }
+            }
+            .padding(14)
+            .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 10))
+            .overlay(RoundedRectangle(cornerRadius: 10).stroke(AppColors.creamBorder, lineWidth: 1))
+        }
+    }
+
+    private func colRow(_ col: APIClient.Col, planner: PlannerState) -> some View {
+        let selected = planner.isColSelected(col)
+        return Button {
+            planner.toggleCol(col)
+        } label: {
+            HStack(spacing: 10) {
+                Text(col.isSummit ? "🗻" : "⛰️").font(.system(size: 16))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(col.name)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(AppColors.ink).lineLimit(1)
+                    Text(colSubtitle(col))
+                        .font(.system(size: 11))
+                        .foregroundStyle(AppColors.inkLight).lineLimit(1)
+                }
+                Spacer()
+                Image(systemName: selected ? "checkmark.circle.fill" : "plus.circle")
+                    .font(.system(size: 18))
+                    .foregroundStyle(selected ? AppColors.terra : AppColors.inkLight)
+            }
+            .padding(.vertical, 7).padding(.horizontal, 10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(selected ? AppColors.terraLight : AppColors.cream, in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(selected ? AppColors.terra : AppColors.creamBorder, lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func colSubtitle(_ col: APIClient.Col) -> String {
+        var parts: [String] = []
+        if let city = col.city { parts.append(city) }
+        if let ele = col.ele { parts.append("\(ele) m") }
+        parts.append(String(format: "%.1f km", col.distKm))
+        return parts.joined(separator: " · ")
+    }
+
     // MARK: - Map
 
     /// Polyline + waypoint markers, shared by the inline preview and the
@@ -221,6 +315,24 @@ struct ItineraryView: View {
                     .overlay(Circle().stroke(Color.white, lineWidth: 1.5))
             }
             .annotationTitles(.hidden)
+        }
+        // Cols & summits near the departure (cycling only). Small ⛰/🗻 pins;
+        // tap to add the col to the route, or remove it (orange when in).
+        if planner.routingProfile == "bike" {
+            ForEach(planner.cols) { col in
+                let selected = planner.isColSelected(col)
+                Annotation("", coordinate: col.coordinate.clLocation) {
+                    ZStack {
+                        Circle()
+                            .fill(selected ? AppColors.terra : Color.white)
+                            .frame(width: 18, height: 18)
+                            .overlay(Circle().stroke(selected ? Color.white : AppColors.inkMid.opacity(0.5), lineWidth: 1.5))
+                        Text(col.isSummit ? "🗻" : "⛰️").font(.system(size: 10))
+                    }
+                    .onTapGesture { planner.toggleCol(col) }
+                }
+                .annotationTitles(.hidden)
+            }
         }
         // Synced marker from elevation chart drag.
         if let idx = planner.hoverIndex,
