@@ -809,6 +809,22 @@ struct ItineraryView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
+                    // TEMP diagnostic — remove once sync is confirmed.
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("🔧 Diagnostic synchro").font(.system(size: 11, weight: .bold)).foregroundStyle(AppColors.ink)
+                        Text("Compte : \(environment.session.profile?.email ?? "—")").font(.system(size: 11)).foregroundStyle(AppColors.ink)
+                        Text("Parcours en mémoire : \(library.items.count)").font(.system(size: 11)).foregroundStyle(AppColors.ink)
+                        Text("Sync en cours : \(library.isSyncing ? "oui" : "non")").font(.system(size: 11)).foregroundStyle(AppColors.ink)
+                        Text("Erreur : \(library.lastError ?? "aucune")").font(.system(size: 11)).foregroundStyle(library.lastError == nil ? AppColors.ink : .red)
+                        Button("↻ Forcer la synchro") {
+                            Task { await library.syncFromServer(user: environment.currentUser) }
+                        }
+                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(AppColors.terra).padding(.top, 4)
+                    }
+                    .padding(10)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(AppColors.creamDark, in: RoundedRectangle(cornerRadius: 8))
+
                     Text("\(library.items.count) itinéraire\(library.items.count > 1 ? "s" : "") enregistré\(library.items.count > 1 ? "s" : "")")
                         .font(.system(size: 12).weight(.semibold))
                         .foregroundStyle(AppColors.inkLight)
