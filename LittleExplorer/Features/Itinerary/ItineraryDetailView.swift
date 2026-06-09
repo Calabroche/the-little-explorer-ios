@@ -24,6 +24,8 @@ struct ItineraryDetailView: View {
     @State private var analysisFailed = false
     /// Tapping the banner opens a full-screen, pan/zoomable map of the route.
     @State private var showFullMap = false
+    /// Collapses the (often long) points-de-passage list by default.
+    @State private var waypointsCollapsed = true
 
     var body: some View {
         NavigationStack {
@@ -206,7 +208,35 @@ struct ItineraryDetailView: View {
     private var waypointsSection: some View {
         if !itinerary.waypoints.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
-                sectionHeader("Points de passage").padding(.horizontal, 16)
+                HStack {
+                    sectionHeader("Points de passage")
+                    Spacer()
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) { waypointsCollapsed.toggle() }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Text("\(itinerary.waypoints.count)").foregroundStyle(AppColors.terra)
+                            Text(waypointsCollapsed ? "Afficher" : "Réduire")
+                            Image(systemName: waypointsCollapsed ? "chevron.down" : "chevron.up").font(.system(size: 9))
+                        }
+                        .font(.system(size: 11).weight(.semibold))
+                        .foregroundStyle(AppColors.inkMid)
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.horizontal, 16)
+
+                if waypointsCollapsed {
+                    Text("\(itinerary.waypoints.first?.name ?? "")  →  \(itinerary.waypoints.last?.name ?? "")\(itinerary.loop ? "  ↺" : "")")
+                        .font(.system(size: 13))
+                        .foregroundStyle(AppColors.inkMid)
+                        .lineLimit(2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(14)
+                        .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 10))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(AppColors.creamBorder, lineWidth: 1))
+                        .padding(.horizontal, 16)
+                } else {
                 VStack(spacing: 0) {
                     ForEach(Array(itinerary.waypoints.enumerated()), id: \.element.id) { index, wp in
                         HStack(spacing: 10) {
@@ -238,6 +268,7 @@ struct ItineraryDetailView: View {
                 .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 10))
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(AppColors.creamBorder, lineWidth: 1))
                 .padding(.horizontal, 16)
+                }
             }
         }
     }
