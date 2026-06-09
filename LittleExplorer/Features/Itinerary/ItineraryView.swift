@@ -47,8 +47,6 @@ struct ItineraryView: View {
     @State private var pois: [APIClient.RoutePoi] = []
     @State private var poisLoading = false
     @State private var poiFetchedKey = ""
-    /// TEMP — live server-identity probe for the sync diagnostic.
-    @State private var diagText = ""
 
     var body: some View {
         @Bindable var planner = planner
@@ -811,45 +809,6 @@ struct ItineraryView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) {
-                    // TEMP diagnostic — remove once sync is confirmed.
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text("🔧 Diagnostic synchro").font(.system(size: 11, weight: .bold)).foregroundStyle(AppColors.ink)
-                        Text("Compte (cache) : \(environment.session.profile?.email ?? "—")").font(.system(size: 11)).foregroundStyle(AppColors.ink)
-                        Text("user_id (cache) : \(String((environment.session.profile?.id ?? "—").prefix(8)))").font(.system(size: 11)).foregroundStyle(AppColors.ink)
-                        Text("Parcours en mémoire : \(library.items.count)").font(.system(size: 11)).foregroundStyle(AppColors.ink)
-                        Text("Erreur : \(library.lastError ?? "aucune")").font(.system(size: 11)).foregroundStyle(library.lastError == nil ? AppColors.ink : .red)
-                        if !diagText.isEmpty {
-                            Text(diagText).font(.system(size: 11, weight: .semibold)).foregroundStyle(.blue)
-                        }
-                        HStack(spacing: 12) {
-                            Button("↻ Forcer la synchro") {
-                                Task { await library.syncFromServer(user: environment.currentUser) }
-                            }
-                            .font(.system(size: 12, weight: .semibold)).foregroundStyle(AppColors.terra)
-                            Button("🔬 Test serveur (live)") {
-                                Task {
-                                    do {
-                                        let its = try await environment.api.fetchItineraries()
-                                        var detail = "—"
-                                        if let first = its.first {
-                                            do { _ = try await environment.api.fetchItinerary(id: first.id); detail = "decode OK" }
-                                            catch { detail = String(describing: error) }
-                                        }
-                                        await library.syncFromServer(user: environment.currentUser)
-                                        diagText = "serveur=\(its.count) · items=\(library.items.count) · err=\(library.lastError ?? "nil")\nDETAIL: \(detail)"
-                                    } catch {
-                                        diagText = "ERR: \(String(describing: error))"
-                                    }
-                                }
-                            }
-                            .font(.system(size: 12, weight: .semibold)).foregroundStyle(.blue)
-                        }
-                        .padding(.top, 4)
-                    }
-                    .padding(10)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .background(AppColors.creamDark, in: RoundedRectangle(cornerRadius: 8))
-
                     Text("\(library.items.count) itinéraire\(library.items.count > 1 ? "s" : "") enregistré\(library.items.count > 1 ? "s" : "")")
                         .font(.system(size: 12).weight(.semibold))
                         .foregroundStyle(AppColors.inkLight)

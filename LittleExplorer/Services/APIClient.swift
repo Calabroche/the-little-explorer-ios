@@ -203,7 +203,11 @@ actor APIClient {
 
     /// GET /api/itineraries?id=<id> — full itinerary with payload.
     func fetchItinerary(id: String) async throws -> Itinerary {
-        let response: ItineraryDetail = try await get("/api/itineraries?id=\(id)")
+        // NB: pass `id` via the query param, NOT inline in the path —
+        // appendingPathComponent percent-encodes the `?`, which would hit a
+        // bogus path and return the 404 HTML page (decode then fails with
+        // "Unexpected character '<'"), silently dropping every server route.
+        let response: ItineraryDetail = try await get("/api/itineraries", query: ["id": id])
         return response.payload
     }
 
@@ -311,7 +315,9 @@ actor APIClient {
     /// maintenance log scoped to one bike, plus a server-computed
     /// "next due" snapshot per kind. Same shape iOS + web consume.
     func fetchServiceEvents(gearId: String) async throws -> ServiceEventResponse {
-        try await get("/api/service-events?gear_id=\(gearId)")
+        // Query via the param (see fetchItinerary) — inline `?` in the path
+        // gets percent-encoded by appendingPathComponent and 404s to HTML.
+        try await get("/api/service-events", query: ["gear_id": gearId])
     }
 
     /// POST /api/service-events — log one maintenance event. Server
