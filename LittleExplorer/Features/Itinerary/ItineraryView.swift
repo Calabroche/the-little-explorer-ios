@@ -47,6 +47,8 @@ struct ItineraryView: View {
     @State private var pois: [APIClient.RoutePoi] = []
     @State private var poisLoading = false
     @State private var poiFetchedKey = ""
+    /// TEMP — live server-identity probe for the sync diagnostic.
+    @State private var diagText = ""
 
     var body: some View {
         @Bindable var planner = planner
@@ -812,14 +814,32 @@ struct ItineraryView: View {
                     // TEMP diagnostic — remove once sync is confirmed.
                     VStack(alignment: .leading, spacing: 3) {
                         Text("🔧 Diagnostic synchro").font(.system(size: 11, weight: .bold)).foregroundStyle(AppColors.ink)
-                        Text("Compte : \(environment.session.profile?.email ?? "—")").font(.system(size: 11)).foregroundStyle(AppColors.ink)
+                        Text("Compte (cache) : \(environment.session.profile?.email ?? "—")").font(.system(size: 11)).foregroundStyle(AppColors.ink)
+                        Text("user_id (cache) : \(String((environment.session.profile?.id ?? "—").prefix(8)))").font(.system(size: 11)).foregroundStyle(AppColors.ink)
                         Text("Parcours en mémoire : \(library.items.count)").font(.system(size: 11)).foregroundStyle(AppColors.ink)
-                        Text("Sync en cours : \(library.isSyncing ? "oui" : "non")").font(.system(size: 11)).foregroundStyle(AppColors.ink)
                         Text("Erreur : \(library.lastError ?? "aucune")").font(.system(size: 11)).foregroundStyle(library.lastError == nil ? AppColors.ink : .red)
-                        Button("↻ Forcer la synchro") {
-                            Task { await library.syncFromServer(user: environment.currentUser) }
+                        if !diagText.isEmpty {
+                            Text(diagText).font(.system(size: 11, weight: .semibold)).foregroundStyle(.blue)
                         }
-                        .font(.system(size: 12, weight: .semibold)).foregroundStyle(AppColors.terra).padding(.top, 4)
+                        HStack(spacing: 12) {
+                            Button("↻ Forcer la synchro") {
+                                Task { await library.syncFromServer(user: environment.currentUser) }
+                            }
+                            .font(.system(size: 12, weight: .semibold)).foregroundStyle(AppColors.terra)
+                            Button("🔬 Test serveur (live)") {
+                                Task {
+                                    do {
+                                        let me = try await environment.api.me()
+                                        let its = try await environment.api.fetchItineraries()
+                                        diagText = "LIVE id=\(String(me.id.prefix(8))) email=\(me.email ?? "—") serveur=\(its.count) parcours"
+                                    } catch {
+                                        diagText = "LIVE ERREUR: \(error.localizedDescription)"
+                                    }
+                                }
+                            }
+                            .font(.system(size: 12, weight: .semibold)).foregroundStyle(.blue)
+                        }
+                        .padding(.top, 4)
                     }
                     .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
