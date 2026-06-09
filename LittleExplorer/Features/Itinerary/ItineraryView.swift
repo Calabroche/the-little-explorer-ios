@@ -47,6 +47,9 @@ struct ItineraryView: View {
     @State private var pois: [APIClient.RoutePoi] = []
     @State private var poisLoading = false
     @State private var poiFetchedKey = ""
+    /// Collapses the stops list (mirrors the web's "Réduire" button) so a
+    /// long route doesn't push the rest of the form down.
+    @State private var stopsCollapsed = false
 
     var body: some View {
         @Bindable var planner = planner
@@ -726,11 +729,35 @@ struct ItineraryView: View {
     @ViewBuilder
     private func waypointsList(planner: PlannerState) -> some View {
         @Bindable var planner = planner
-        VStack(alignment: .leading, spacing: 6) {
-            Text("WAYPOINTS")
-                .font(.system(size: 9).weight(.semibold))
-                .tracking(1.2)
-                .foregroundStyle(AppColors.inkLight)
+        return VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                Text("POINTS DE PASSAGE")
+                    .font(.system(size: 9).weight(.semibold))
+                    .tracking(1.2)
+                    .foregroundStyle(AppColors.inkLight)
+                Spacer()
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) { stopsCollapsed.toggle() }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text("\(planner.waypoints.count)").foregroundStyle(AppColors.terra)
+                        Text(stopsCollapsed ? "Afficher" : "Réduire")
+                        Image(systemName: stopsCollapsed ? "chevron.down" : "chevron.up").font(.system(size: 9))
+                    }
+                    .font(.system(size: 10).weight(.semibold))
+                    .foregroundStyle(AppColors.inkMid)
+                }
+                .buttonStyle(.plain)
+            }
+            if stopsCollapsed {
+                Text("\(planner.waypoints.first?.name ?? "")  →  \(planner.waypoints.last?.name ?? "")\(planner.loop ? "  ↺" : "")")
+                    .font(.system(size: 12))
+                    .foregroundStyle(AppColors.inkMid)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 10).padding(.vertical, 8)
+                    .background(AppColors.creamDark, in: RoundedRectangle(cornerRadius: 4))
+            } else {
             ForEach(Array(planner.waypoints.enumerated()), id: \.element.id) { index, waypoint in
                 HStack(spacing: 8) {
                     Text("\(index + 1)")
@@ -776,6 +803,7 @@ struct ItineraryView: View {
                 .padding(.vertical, 8)
                 .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 4))
                 .overlay(RoundedRectangle(cornerRadius: 4).stroke(AppColors.creamBorder, lineWidth: 1))
+            }
             }
         }
     }

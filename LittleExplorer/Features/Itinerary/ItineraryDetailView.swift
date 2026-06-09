@@ -22,6 +22,8 @@ struct ItineraryDetailView: View {
     @State private var analysis: APIClient.RouteAnalysis?
     @State private var analysisLoading = false
     @State private var analysisFailed = false
+    /// Tapping the banner opens a full-screen, pan/zoomable map of the route.
+    @State private var showFullMap = false
 
     var body: some View {
         NavigationStack {
@@ -46,6 +48,7 @@ struct ItineraryDetailView: View {
             }
             .safeAreaInset(edge: .bottom) { actionBar }
             .task { await loadAnalysis() }
+            .fullScreenCover(isPresented: $showFullMap) { fullMapView }
         }
     }
 
@@ -64,6 +67,69 @@ struct ItineraryDetailView: View {
                     .background(diff.color, in: Capsule())
                     .padding(14)
             }
+            // Tap-to-expand affordance, mirroring the web's clickable map.
+            .overlay(alignment: .bottomTrailing) {
+                Label("Agrandir", systemImage: "arrow.up.left.and.arrow.down.right")
+                    .font(.system(size: 11).weight(.semibold))
+                    .foregroundStyle(AppColors.ink)
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .background(.regularMaterial, in: Capsule())
+                    .padding(12)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { showFullMap = true }
+    }
+
+    // MARK: Full-screen interactive map
+
+    private var fullMapView: some View {
+        ZStack(alignment: .topTrailing) {
+            Map(initialPosition: .region(routeRegion)) {
+                if let geom = itinerary.geometry, geom.count >= 2 {
+                    MapPolyline(coordinates: geom.map(\.clLocation))
+                        .stroke(AppColors.terra, lineWidth: 4)
+                }
+                ForEach(Array(itinerary.waypoints.enumerated()), id: \.offset) { _, wp in
+                    Annotation("", coordinate: wp.coordinate.clLocation) {
+                        Circle()
+                            .fill(AppColors.terra)
+                            .frame(width: 11, height: 11)
+                            .overlay(Circle().stroke(Color.white, lineWidth: 1.5))
+                    }
+                    .annotationTitles(.hidden)
+                }
+            }
+            .ignoresSafeArea()
+
+            Button { showFullMap = false } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(AppColors.ink)
+                    .padding(12)
+                    .background(.regularMaterial, in: Circle())
+            }
+            .padding(16)
+        }
+    }
+
+    /// Map region fitted to the route (geometry, else waypoints).
+    private var routeRegion: MKCoordinateRegion {
+        let coords: [CLLocationCoordinate2D] = (itinerary.geometry?.isEmpty == false)
+            ? (itinerary.geometry ?? []).map(\.clLocation)
+            : itinerary.waypoints.map { CLLocationCoordinate2D(latitude: $0.lat, longitude: $0.lng) }
+        guard
+            let minLat = coords.map(\.latitude).min(), let maxLat = coords.map(\.latitude).max(),
+            let minLng = coords.map(\.longitude).min(), let maxLng = coords.map(\.longitude).max()
+        else {
+            return MKCoordinateRegion(
+                center: CLLocationCoordinate2D(latitude: 45.81, longitude: 4.75),
+                span: MKCoordinateSpan(latitudeDelta: 0.1, longitudeDelta: 0.1))
+        }
+        return MKCoordinateRegion(
+            center: CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2, longitude: (minLng + maxLng) / 2),
+            span: MKCoordinateSpan(
+                latitudeDelta: max(0.01, (maxLat - minLat) * 1.4),
+                longitudeDelta: max(0.01, (maxLng - minLng) * 1.4)))
     }
 
     // MARK: Title
