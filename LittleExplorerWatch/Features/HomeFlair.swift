@@ -1,8 +1,5 @@
 import SwiftUI
 
-// FireworksView now lives in Shared/FireworksView.swift so the iOS launch
-// splash and the watch home screen share one implementation.
-
 /// A cyclist who keeps pedalling — replaces the old static bicycle on the
 /// home screen. The figure bobs forward with a repeating motion and a
 /// gentle lean so it reads as "someone riding" rather than a frozen icon.

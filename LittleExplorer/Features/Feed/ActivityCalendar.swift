@@ -28,6 +28,22 @@ struct ActivityCalendarView: View {
             guard totalDurationMin > 0, totalKm > 0 else { return nil }
             return totalKm / (Double(totalDurationMin) / 60)
         }
+
+        /// Max over the day's activities (already km/h).
+        var maxSpeedKmh: Double? { activities.compactMap(\.maxSpeed).max() }
+        /// Steepest incline over the day's activities (already %).
+        var maxInclinePct: Double? { activities.compactMap(\.maxIncline).max() }
+        /// Duration-weighted average heart rate (bpm) over activities that have it.
+        var avgHrBpm: Int? {
+            let withHr = activities.filter { $0.avgHr != nil }
+            guard !withHr.isEmpty else { return nil }
+            let totalMin = withHr.map(\.durationMin).reduce(0, +)
+            if totalMin > 0 {
+                let weighted = withHr.reduce(0.0) { $0 + ($1.avgHr ?? 0) * Double($1.durationMin) }
+                return Int((weighted / Double(totalMin)).rounded())
+            }
+            return Int((withHr.compactMap(\.avgHr).reduce(0, +) / Double(withHr.count)).rounded())
+        }
     }
 
     var body: some View {
@@ -187,13 +203,28 @@ struct ActivityCalendarView: View {
         }()
         let dateLbl = formatter.string(from: cell.date)
 
-        return VStack(alignment: .leading, spacing: 4) {
+        let hrColor = Color(red: 0.78, green: 0.25, blue: 0.18)
+        var chips: [(String, String, Color)] = []
+        chips.append(("KM", String(format: "%.1f", cell.totalKm), AppColors.terra))
+        if let speed = cell.avgSpeedKmh { chips.append(("MOY", String(format: "%.1f km/h", speed), AppColors.blue)) }
+        if cell.totalElevationM > 0 { chips.append(("D+", "\(Int(cell.totalElevationM)) m", AppColors.green)) }
+        if cell.totalDurationMin > 0 { chips.append(("DURÉE", formatDuration(cell.totalDurationMin), AppColors.ink)) }
+        if let v = cell.maxSpeedKmh { chips.append(("V. MAX", String(format: "%.1f km/h", v), AppColors.blue)) }
+        if let p = cell.maxInclinePct { chips.append(("PENTE MAX", String(format: "%.1f %%", p), AppColors.terra)) }
+        if let hr = cell.avgHrBpm { chips.append(("FC MOY", "\(hr) bpm", hrColor)) }
+
+        return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 6) {
                 Text(dateLbl.capitalized)
                     .font(.system(size: 10).weight(.semibold))
                     .tracking(0.6)
                     .foregroundStyle(AppColors.ink)
-                if cell.activities.count > 1 {
+                if cell.activities.count == 1, let title = cell.activities.first?.title, !title.isEmpty {
+                    Text("· \(title)")
+                        .font(.system(size: 10))
+                        .foregroundStyle(AppColors.inkLight)
+                        .lineLimit(1)
+                } else if cell.activities.count > 1 {
                     Text("· \(cell.activities.count) sorties")
                         .font(.system(size: 10))
                         .foregroundStyle(AppColors.inkLight)
@@ -205,21 +236,25 @@ struct ActivityCalendarView: View {
                     .font(.system(size: 10).italic())
                     .foregroundStyle(AppColors.inkLight)
             } else {
-                HStack(spacing: 12) {
-                    statChip(label: "KM", value: String(format: "%.1f", cell.totalKm), color: AppColors.terra)
-                    if let speed = cell.avgSpeedKmh {
-                        statChip(label: "MOY", value: String(format: "%.1f km/h", speed), color: AppColors.blue)
-                    }
-                    if cell.totalElevationM > 0 {
-                        statChip(label: "D+", value: "\(Int(cell.totalElevationM)) m", color: AppColors.green)
+                LazyVGrid(
+                    columns: [GridItem(.adaptive(minimum: 74), spacing: 14, alignment: .leading)],
+                    alignment: .leading, spacing: 8,
+                ) {
+                    ForEach(chips, id: \.0) { chip in
+                        statChip(label: chip.0, value: chip.1, color: chip.2)
                     }
                 }
             }
         }
         .padding(.horizontal, 10)
-        .padding(.vertical, 7)
+        .padding(.vertical, 8)
         .background(AppColors.creamDark, in: RoundedRectangle(cornerRadius: 4))
         .overlay(RoundedRectangle(cornerRadius: 4).stroke(AppColors.creamBorder, lineWidth: 0.5))
+    }
+
+    private func formatDuration(_ minutes: Int) -> String {
+        let h = minutes / 60, m = minutes % 60
+        return h > 0 ? "\(h)h\(String(format: "%02d", m))" : "\(m) min"
     }
 
     private func statChip(label: String, value: String, color: Color) -> some View {

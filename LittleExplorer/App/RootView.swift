@@ -12,8 +12,6 @@ struct RootView: View {
     /// Drives the one-time welcome cover. Set true on first appearance of
     /// the authenticated UI when `hasSeenWelcome` is still false.
     @State private var showWelcome = false
-    /// Full-screen fireworks splash shown for ~5 s on launch.
-    @State private var showSplash = true
 
     var body: some View {
         ZStack {
@@ -23,15 +21,6 @@ struct RootView: View {
                 } else {
                     LoginView()
                 }
-            }
-
-            if showSplash {
-                FireworksSplash()
-                    .transition(.opacity)
-                    .task {
-                        try? await Task.sleep(for: .seconds(5))
-                        withAnimation(.easeOut(duration: 0.5)) { showSplash = false }
-                    }
             }
         }
         // Best-effort stale Live Activity cleanup. Runs once after the
