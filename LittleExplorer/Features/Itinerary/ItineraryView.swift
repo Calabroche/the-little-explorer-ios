@@ -829,11 +829,16 @@ struct ItineraryView: View {
                             Button("🔬 Test serveur (live)") {
                                 Task {
                                     do {
-                                        let me = try await environment.api.me()
                                         let its = try await environment.api.fetchItineraries()
-                                        diagText = "LIVE id=\(String(me.id.prefix(8))) email=\(me.email ?? "—") serveur=\(its.count) parcours"
+                                        var detail = "—"
+                                        if let first = its.first {
+                                            do { _ = try await environment.api.fetchItinerary(id: first.id); detail = "decode OK" }
+                                            catch { detail = String(describing: error) }
+                                        }
+                                        await library.syncFromServer(user: environment.currentUser)
+                                        diagText = "serveur=\(its.count) · items=\(library.items.count) · err=\(library.lastError ?? "nil")\nDETAIL: \(detail)"
                                     } catch {
-                                        diagText = "LIVE ERREUR: \(error.localizedDescription)"
+                                        diagText = "ERR: \(String(describing: error))"
                                     }
                                 }
                             }
