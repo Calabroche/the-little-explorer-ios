@@ -95,9 +95,6 @@ struct ItineraryView: View {
                             selectedIndex: $planner.hoverIndex,
                         )
                     }
-
-                    librarySection(planner: planner)
-                        .padding(.horizontal, 16)
                 }
                 .padding(.vertical, 16)
             }
