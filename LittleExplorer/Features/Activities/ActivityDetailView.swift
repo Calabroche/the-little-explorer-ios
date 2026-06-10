@@ -1065,8 +1065,8 @@ struct ActivityDetailView: View {
     private var mechanicalRows: [MetricRow] {
         var rows: [MetricRow] = []
         if let vam = activity.vam { rows.append(MetricRow(key: "VAM", value: "\(Int(vam.rounded()))", unit: "m/h", tip: "Vitesse ascensionnelle")) }
-        if let max = activity.maxIncline { rows.append(MetricRow(key: "Pente max", value: String(format: "+%.1f", max), unit: "%", tip: "Inclinaison maximale")) }
-        if let min = activity.minIncline { rows.append(MetricRow(key: "Pente min", value: String(format: "%.1f", min), unit: "%", tip: "Descente max")) }
+        if let max = activity.maxIncline { rows.append(MetricRow(key: "Montée max", value: String(format: "+%.1f", max), unit: "%", tip: "Montée la plus raide de la sortie")) }
+        if let min = activity.minIncline { rows.append(MetricRow(key: "Descente max", value: String(format: "%.1f", min), unit: "%", tip: "Descente la plus raide de la sortie")) }
         return rows
     }
 

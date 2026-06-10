@@ -210,7 +210,7 @@ struct ActivityCalendarView: View {
         if cell.totalElevationM > 0 { chips.append(("D+", "\(Int(cell.totalElevationM)) m", AppColors.green)) }
         if cell.totalDurationMin > 0 { chips.append(("DURÉE", formatDuration(cell.totalDurationMin), AppColors.ink)) }
         if let v = cell.maxSpeedKmh { chips.append(("V. MAX", String(format: "%.1f km/h", v), AppColors.blue)) }
-        if let p = cell.maxInclinePct { chips.append(("PENTE MAX", String(format: "%.1f %%", p), AppColors.terra)) }
+        if let p = cell.maxInclinePct { chips.append(("MONTÉE MAX", String(format: "%.1f %%", p), AppColors.terra)) }
         if let hr = cell.avgHrBpm { chips.append(("FC MOY", "\(hr) bpm", hrColor)) }
 
         return VStack(alignment: .leading, spacing: 8) {

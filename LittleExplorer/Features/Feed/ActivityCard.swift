@@ -157,8 +157,8 @@ struct ActivityCard: View {
             statsGrid(
                 stats: [
                     Stat(label: "MONTÉE",     value: activity.elevation.map { String(format: "%.1f", $0) }, unit: "m"),
-                    Stat(label: "▲ PENTE MAX", value: activity.maxIncline.map { String(format: "%+.1f", $0) }, unit: "%"),
-                    Stat(label: "▼ PENTE MIN", value: activity.minIncline.map { String(format: "%.1f", $0) }, unit: "%"),
+                    Stat(label: "▲ MONTÉE MAX", value: activity.maxIncline.map { String(format: "%+.1f", $0) }, unit: "%"),
+                    Stat(label: "▼ DESCENTE MAX", value: activity.minIncline.map { String(format: "%.1f", $0) }, unit: "%"),
                     Stat(label: "FC MOY",      value: activity.avgHr.map { String(format: "%.1f", $0) }, unit: "bpm"),
                 ],
             )
