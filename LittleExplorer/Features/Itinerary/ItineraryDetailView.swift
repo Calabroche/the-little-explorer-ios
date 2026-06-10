@@ -26,6 +26,11 @@ struct ItineraryDetailView: View {
     @State private var showFullMap = false
     /// Collapses the (often long) points-de-passage list by default.
     @State private var waypointsCollapsed = true
+    /// Cruising-speed override (km/h). When set, the duration is recomputed
+    /// from it — mirrors the web's editable speed in the route summary.
+    @State private var speedOverride: Double?
+    @State private var showShareSheet = false
+    @State private var shareItems: [Any] = []
 
     var body: some View {
         NavigationStack {
@@ -45,11 +50,21 @@ struct ItineraryDetailView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button { shareLink() } label: { Label("Partager le lien", systemImage: "link") }
+                        Button { exportGpx() } label: { Label("Exporter en GPX", systemImage: "arrow.down.doc") }
+                    } label: {
+                        Image(systemName: "square.and.arrow.up")
+                    }
+                    .disabled((itinerary.geometry?.count ?? 0) < 2)
+                }
+                ToolbarItem(placement: .topBarTrailing) {
                     Button("Fermer") { dismiss() }
                 }
             }
             .safeAreaInset(edge: .bottom) { actionBar }
             .task { await loadAnalysis() }
+            .sheet(isPresented: $showShareSheet) { ShareSheet(items: shareItems) }
             .fullScreenCover(isPresented: $showFullMap) { fullMapView }
         }
     }
@@ -173,8 +188,8 @@ struct ItineraryDetailView: View {
             sectionHeader("Statistiques").padding(.horizontal, 16)
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
                 if let km = itinerary.distanceKm { stat("Distance", String(format: "%.1f km", km)) }
-                if let min = itinerary.durationMin { stat("Durée", formatDur(min)) }
-                if let v = avgSpeed { stat("Vitesse moy.", String(format: "%.1f km/h", v)) }
+                if let min = effDurationMin { stat("Durée", formatDur(min)) }
+                if let v = effSpeed { stat("Vitesse moy.", String(format: "%.1f km/h", v)) }
                 stat("Dénivelé +", "\(ascent) m", color: AppColors.terra)
                 stat("Dénivelé −", "\(descent) m", color: AppColors.blue)
                 if let pts = itinerary.waypoints.count as Int? { stat("Points", "\(pts)") }
@@ -182,7 +197,42 @@ struct ItineraryDetailView: View {
                 if let lo = lowest { stat("Point bas", "\(lo) m") }
             }
             .padding(.horizontal, 16)
+
+            // Editable cruising speed — the Durée above follows it.
+            if avgSpeed != nil, let cur = effSpeed {
+                HStack(spacing: 10) {
+                    Text("VITESSE DE CROISIÈRE")
+                        .font(.system(size: 9).weight(.bold)).tracking(0.5)
+                        .foregroundStyle(AppColors.inkLight)
+                    Spacer()
+                    if speedOverride != nil {
+                        Button("auto") { withAnimation { speedOverride = nil } }
+                            .font(.system(size: 12).weight(.semibold))
+                            .foregroundStyle(AppColors.terra)
+                    }
+                    Button { setSpeed(cur - 1) } label: {
+                        Image(systemName: "minus.circle.fill").font(.system(size: 22)).foregroundStyle(AppColors.inkMid)
+                    }
+                    Text("\(Int(cur.rounded()))")
+                        .font(.system(size: 17, design: .serif).weight(.bold))
+                        .foregroundStyle(AppColors.ink)
+                        .frame(minWidth: 30)
+                        .monospacedDigit()
+                    Text("km/h").font(.system(size: 12)).foregroundStyle(AppColors.inkLight)
+                    Button { setSpeed(cur + 1) } label: {
+                        Image(systemName: "plus.circle.fill").font(.system(size: 22)).foregroundStyle(AppColors.terra)
+                    }
+                }
+                .padding(12)
+                .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).stroke(AppColors.creamBorder, lineWidth: 1))
+                .padding(.horizontal, 16)
+            }
         }
+    }
+
+    private func setSpeed(_ v: Double) {
+        speedOverride = min(50, max(5, v.rounded()))
     }
 
     private func stat(_ label: String, _ value: String, color: Color = AppColors.ink) -> some View {
@@ -493,6 +543,56 @@ struct ItineraryDetailView: View {
     private var avgSpeed: Double? {
         guard let km = itinerary.distanceKm, let min = itinerary.durationMin, min > 0 else { return nil }
         return km / (Double(min) / 60)
+    }
+
+    /// Effective cruising speed: the override if set, else the stored average.
+    private var effSpeed: Double? { speedOverride ?? avgSpeed }
+
+    /// Duration recomputed from the override (else the stored value).
+    private var effDurationMin: Int? {
+        if let o = speedOverride, let km = itinerary.distanceKm, o > 0 {
+            return Int((km / o * 60).rounded())
+        }
+        return itinerary.durationMin
+    }
+
+    // MARK: - Export / share
+
+    /// Build a GPX from the stored route + per-point elevations and present the
+    /// system share sheet (same builder the planner uses).
+    private func exportGpx() {
+        guard let geometry = itinerary.geometry, geometry.count >= 2 else { return }
+        var perPointElev: [Double]?
+        if let elevations = itinerary.elevations,
+           let indices = itinerary.elevSampleIndices,
+           elevations.count == indices.count {
+            var per = Array(repeating: 0.0, count: geometry.count)
+            for s in 0..<(indices.count - 1) {
+                let i0 = indices[s], i1 = indices[s + 1]
+                let e0 = elevations[s], e1 = elevations[s + 1]
+                guard i1 > i0 else { continue }
+                for i in i0...i1 where per.indices.contains(i) {
+                    let t = Double(i - i0) / Double(i1 - i0)
+                    per[i] = e0 + (e1 - e0) * t
+                }
+            }
+            perPointElev = per
+        }
+        let name = itinerary.name.isEmpty ? "itineraire" : itinerary.name
+        let gpx = GpxBuilder.build(name: name, waypoints: itinerary.waypoints, polyline: geometry, elevations: perPointElev)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("\(GpxBuilder.slugify(name)).gpx")
+        guard (try? gpx.write(to: url, atomically: true, encoding: .utf8)) != nil else { return }
+        shareItems = [url]
+        showShareSheet = true
+    }
+
+    /// Share a public web link where anyone can view the route, elevation,
+    /// stats, way types and waypoints (no account needed).
+    private func shareLink() {
+        let link = "https://the-little-explorer-app.vercel.app/api/share/\(itinerary.id)"
+        let text = "\(itinerary.name) — itinéraire sur The Little Explorer"
+        shareItems = [URL(string: link) ?? link as Any, text]
+        showShareSheet = true
     }
 
     private var subtitle: String {
