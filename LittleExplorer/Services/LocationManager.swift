@@ -10,6 +10,9 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
 
     private let manager = CLLocationManager()
     private var trackContinuation: AsyncStream<CLLocation>.Continuation?
+    /// Set when `requestOneShotLocation()` is called before we have permission,
+    /// so we can fire the actual request the moment authorization is granted.
+    private var pendingOneShot = false
 
     override init() {
         self.authorizationStatus = manager.authorizationStatus
@@ -26,6 +29,23 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
         case .notDetermined: manager.requestWhenInUseAuthorization()
         case .authorizedWhenInUse: manager.requestAlwaysAuthorization()
         default: break
+        }
+    }
+
+    /// One-shot fix for features that just need "where am I right now" (e.g.
+    /// finding nearby bike shops) without starting a full tracking session.
+    /// The result lands in `lastLocation` via the delegate, which @Observable
+    /// publishes to any watching view. If we don't have permission yet, ask
+    /// first — `didChangeAuthorization` re-drives this once it's granted.
+    func requestOneShotLocation() {
+        switch authorizationStatus {
+        case .notDetermined:
+            pendingOneShot = true
+            manager.requestWhenInUseAuthorization()
+        case .authorizedWhenInUse, .authorizedAlways:
+            manager.requestLocation()
+        default:
+            break
         }
     }
 
@@ -55,15 +75,36 @@ final class LocationManager: NSObject, CLLocationManagerDelegate {
 
     func locationManager(_ manager: CLLocationManager, didChangeAuthorization status: CLAuthorizationStatus) {
         authorizationStatus = status
+        firePendingOneShotIfAllowed()
     }
 
     func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
         authorizationStatus = manager.authorizationStatus
+        firePendingOneShotIfAllowed()
+    }
+
+    private func firePendingOneShotIfAllowed() {
+        guard pendingOneShot else { return }
+        switch authorizationStatus {
+        case .authorizedWhenInUse, .authorizedAlways:
+            pendingOneShot = false
+            manager.requestLocation()
+        case .denied, .restricted:
+            pendingOneShot = false
+        default:
+            break
+        }
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let last = locations.last else { return }
         lastLocation = last
         trackContinuation?.yield(last)
+    }
+
+    func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
+        // requestLocation() requires a delegate error handler. A one-shot
+        // failure is non-fatal: the view falls back to its manual flow.
+        Log.app.error("location one-shot failed: \(error.localizedDescription, privacy: .public)")
     }
 }

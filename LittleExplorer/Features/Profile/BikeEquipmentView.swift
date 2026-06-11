@@ -20,6 +20,8 @@ struct BikeEquipmentView: View {
     @State private var error: String?
     @State private var pendingAction: BikeEquipment?
     @State private var pendingActionType: PendingAction = .replace
+    /// "Trouver un professionnel" sheet — nearby bike shops / repairers.
+    @State private var showFindPro = false
     /// Which sub-tab of the Matériel screen is showing. Mirrors the
     /// web's two-tab toggle on /equipement: wear tracker vs the
     /// maintenance log (carnet d'entretien).
@@ -62,6 +64,20 @@ struct BikeEquipmentView: View {
         .background(AppColors.cream.ignoresSafeArea())
         .navigationTitle("Matériel")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button {
+                    showFindPro = true
+                } label: {
+                    Image(systemName: "wrench.and.screwdriver")
+                }
+                .tint(AppColors.terra)
+                .accessibilityLabel("Trouver un professionnel")
+            }
+        }
+        .sheet(isPresented: $showFindPro) {
+            BikeShopsView()
+        }
         .task { await load() }
         .refreshable { await load() }
         .alert("Marquer remplacé ?", isPresented: .init(

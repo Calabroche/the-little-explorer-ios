@@ -695,6 +695,24 @@ actor APIClient {
         return r.cols
     }
 
+    /// GET /api/bike-shops — bike shops / repairers within `radiusKm` of
+    /// (lat, lng), nearest first, for the "Trouver un professionnel" feature.
+    /// `brand` is the rider's bike brand: the server flags shops that look
+    /// like specialists for it (OSM tags + a best-effort website scan). This
+    /// is a GET with query params (NOT a POST like cols) — an inline `?` in
+    /// the path would get percent-encoded by appendingPathComponent and 404,
+    /// so the query goes through the `query:` argument.
+    func bikeShops(lat: Double, lng: Double, radiusKm: Double, brand: String) async throws -> [BikeShop] {
+        struct Resp: Decodable { let shops: [BikeShop] }
+        let r: Resp = try await get("/api/bike-shops", query: [
+            "lat":      String(lat),
+            "lng":      String(lng),
+            "radiusKm": String(Int(radiusKm)),
+            "brand":    brand,
+        ])
+        return r.shops
+    }
+
     /// `profile` is "bike" (default) or "foot" (running — OSRM foot profile,
     /// allows footpaths).
     func bikeRoute(waypoints: [Coordinate], steps: Bool = false, profile: String = "bike") async throws -> BikeRoute {
