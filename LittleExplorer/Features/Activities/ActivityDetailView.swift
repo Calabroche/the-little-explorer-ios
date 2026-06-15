@@ -323,9 +323,11 @@ struct ActivityDetailView: View {
                     .monospacedDigit()
             }
 
-            LazyVGrid(columns: [GridItem(.flexible(), alignment: .leading),
-                                GridItem(.flexible(), alignment: .leading),
-                                GridItem(.flexible(), alignment: .leading)], spacing: 8) {
+            // One tight row: keep every metric (incl. PUISSANCE) on a single
+            // line. Small fixed gap + a trailing Spacer so the stats sit close
+            // together on the left instead of being spread across the width;
+            // scrubStat shrinks its text on narrow screens rather than wrapping.
+            HStack(alignment: .top, spacing: 12) {
                 if let hr = point.heartRate {
                     scrubStat(label: "FC", value: "\(Int(hr.rounded()))", unit: "bpm", color: AppColors.terra)
                 }
@@ -338,6 +340,7 @@ struct ActivityDetailView: View {
                 if let alt = point.altitude {
                     scrubStat(label: "ALTITUDE", value: "\(Int(alt.rounded()))", unit: "m", color: AppColors.terra)
                 }
+                Spacer(minLength: 0)
             }
         }
         .padding(14)
@@ -352,6 +355,8 @@ struct ActivityDetailView: View {
                 .font(.system(size: 9).weight(.bold))
                 .tracking(1.2)
                 .foregroundStyle(AppColors.inkLight)
+                .lineLimit(1)
+                .fixedSize()
             HStack(alignment: .firstTextBaseline, spacing: 3) {
                 Text(value)
                     .font(.system(size: 18, design: .serif).weight(.heavy))
@@ -361,6 +366,8 @@ struct ActivityDetailView: View {
                     .font(.system(size: 10))
                     .foregroundStyle(AppColors.inkLight)
             }
+            .lineLimit(1)
+            .minimumScaleFactor(0.7)   // shrink on narrow screens, never wrap
         }
     }
 
