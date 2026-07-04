@@ -40,6 +40,10 @@ final class AppEnvironment {
     /// sync pulls from this store (Phase B).
     let itineraries = ItineraryStore()
     let healthKit = HealthKitService()
+    /// Reads finished workouts out of Apple Health and pushes them to the
+    /// back-end, so rides from any device (Apple Watch, Garmin, Whoop…) land
+    /// in the feed without going through Strava (which caps connected athletes).
+    let healthKitSync: HealthKitSyncManager
     /// Live BLE heart-rate monitor. Doesn't instantiate the CB stack
     /// until the user opens the pairing screen — keeps the system
     /// Bluetooth permission prompt from firing on app launch.
@@ -55,6 +59,7 @@ final class AppEnvironment {
         let activityStore = ActivityStore(localStore: localRides)
         self.activityStore = activityStore
         self.session = SessionStore()
+        self.healthKitSync = HealthKitSyncManager(health: healthKit, api: api)
 
         // Phase 2 + 3 wiring: when a ride file arrives from the Apple
         // Watch, the WatchSessionManager decodes it, hands it to the
@@ -74,6 +79,26 @@ final class AppEnvironment {
         itineraries.attach(api: api) { [weak self] in
             self?.watch.syncItinerariesToWatch()
         }
+
+        // When a HealthKit workout is ingested to the back-end, re-pull the
+        // feed so it shows up without a manual refresh.
+        healthKitSync.onIngested = { [weak self] in
+            guard let self else { return }
+            Task { await self.activityStore.load(user: self.currentUser, force: true) }
+        }
+    }
+
+    /// Start the Apple Health → back-end ingestion. Safe to call repeatedly
+    /// (it no-ops if already observing). Gated on the user's HealthKit toggle
+    /// AND a live session, so call it once we're signed in (RootView does).
+    @MainActor
+    func startHealthKitSync() {
+        // Only reached from RootView once the session token is set, so we just
+        // gate on the user's HealthKit toggle here (reading it is thread-safe;
+        // session.token is MainActor-isolated so we don't touch it off-actor).
+        healthKitSync.start(isEnabled: { [weak self] in
+            self?.healthKitEnabled ?? false
+        })
     }
 
     /// Called when the app comes to the foreground. Reconciles the

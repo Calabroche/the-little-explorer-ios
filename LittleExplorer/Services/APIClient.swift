@@ -253,6 +253,18 @@ actor APIClient {
         }
     }
 
+    // MARK: - HealthKit ingestion (Strava-independent)
+
+    /// POST /api/activities/ingest — push a workout read from Apple Health
+    /// (Apple Watch, Garmin, Whoop… anything that writes to Health) to the
+    /// back-end so it lands in the feed exactly like a Strava ride. This is
+    /// how we get off the Strava athlete cap. Idempotent server-side (stable
+    /// id from the workout UUID), so re-sending is safe.
+    func ingestHealthWorkout(_ payload: HealthIngestPayload) async throws {
+        struct Resp: Decodable { let ok: Bool?; let id: Double? }
+        let _: Resp = try await post("/api/activities/ingest", body: payload)
+    }
+
     // MARK: - Bike maintenance tracker
 
     /// GET /api/equipment — returns the user's bike pieces with

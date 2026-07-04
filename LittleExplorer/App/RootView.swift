@@ -36,6 +36,9 @@ struct RootView: View {
             let token = environment.session.token
             await environment.api.setAuthToken(token)
             if token != nil {
+                // Now that the bearer token is set, start pulling workouts from
+                // Apple Health into the back-end (Strava-independent ingestion).
+                environment.startHealthKitSync()
                 // First request right after sign-in: fetch the profile
                 // so the UI has something to render (avatar, name).
                 do {

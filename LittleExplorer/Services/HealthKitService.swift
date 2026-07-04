@@ -314,3 +314,191 @@ enum HealthKitServiceError: LocalizedError {
         }
     }
 }
+
+// ── READ side: ingest workouts from Apple Health (Strava-independent) ─────────
+//
+// This is what lets Little Explorer capture rides recorded on ANY device that
+// writes to Apple Health (Apple Watch, Garmin Connect, Whoop, Wahoo…), with no
+// Strava athlete cap. We read the finished workout + its GPS route + heart
+// rate, build a payload, and the sync manager POSTs it to /api/activities/ingest.
+extension HealthKitService {
+    /// Types we need READ access to for ingestion.
+    private var ingestReadTypes: Set<HKObjectType> {
+        var t: Set<HKObjectType> = [HKObjectType.workoutType(), HKSeriesType.workoutRoute()]
+        if let hr = HKObjectType.quantityType(forIdentifier: .heartRate) { t.insert(hr) }
+        return t
+    }
+
+    /// Ask for READ permission on workouts / routes / heart rate. Separate from
+    /// `requestAuthorization()` (which asks for WRITE) so each prompt is clear.
+    func requestIngestAuthorization() async throws {
+        guard Self.isAvailable else { throw HealthKitServiceError.notAvailable }
+        try await store.requestAuthorization(toShare: [], read: ingestReadTypes)
+    }
+
+    /// Recent workouts, newest first.
+    func fetchWorkouts(since: Date, limit: Int = 50) async throws -> [HKWorkout] {
+        let predicate = HKQuery.predicateForSamples(withStart: since, end: nil, options: [])
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
+        let samples: [HKSample] = try await withCheckedThrowingContinuation { cont in
+            let q = HKSampleQuery(sampleType: .workoutType(), predicate: predicate, limit: limit, sortDescriptors: [sort]) { _, s, e in
+                if let e { cont.resume(throwing: e) } else { cont.resume(returning: s ?? []) }
+            }
+            store.execute(q)
+        }
+        return samples.compactMap { $0 as? HKWorkout }
+    }
+
+    /// The GPS route for a workout, as time-sorted CLLocations (empty for
+    /// indoor workouts with no route).
+    func routeLocations(for workout: HKWorkout) async throws -> [CLLocation] {
+        let routePredicate = HKQuery.predicateForObjects(from: workout)
+        let routeSamples: [HKSample] = try await withCheckedThrowingContinuation { cont in
+            let q = HKSampleQuery(sampleType: HKSeriesType.workoutRoute(), predicate: routePredicate, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, s, e in
+                if let e { cont.resume(throwing: e) } else { cont.resume(returning: s ?? []) }
+            }
+            store.execute(q)
+        }
+        guard let route = routeSamples.first as? HKWorkoutRoute else { return [] }
+        var locations: [CLLocation] = []
+        try await withCheckedThrowingContinuation { (cont: CheckedContinuation<Void, Error>) in
+            let q = HKWorkoutRouteQuery(route: route) { _, batch, done, error in
+                if let error { cont.resume(throwing: error); return }
+                if let batch { locations.append(contentsOf: batch) }
+                if done { cont.resume(returning: ()) }
+            }
+            store.execute(q)
+        }
+        return locations.sorted { $0.timestamp < $1.timestamp }
+    }
+
+    /// Heart-rate samples inside the workout window, time-sorted.
+    func heartRateSamples(for workout: HKWorkout) async throws -> [(date: Date, bpm: Double)] {
+        guard let hrType = HKQuantityType.quantityType(forIdentifier: .heartRate) else { return [] }
+        let pred = HKQuery.predicateForSamples(withStart: workout.startDate, end: workout.endDate, options: [])
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+        let samples: [HKSample] = try await withCheckedThrowingContinuation { cont in
+            let q = HKSampleQuery(sampleType: hrType, predicate: pred, limit: HKObjectQueryNoLimit, sortDescriptors: [sort]) { _, s, e in
+                if let e { cont.resume(throwing: e) } else { cont.resume(returning: s ?? []) }
+            }
+            store.execute(q)
+        }
+        let unit = HKUnit.count().unitDivided(by: .minute())
+        return samples.compactMap { ($0 as? HKQuantitySample).map { ($0.startDate, $0.quantity.doubleValue(for: unit)) } }
+    }
+
+    /// Strava-style type string for the ingest payload (the back-end buckets it).
+    func stravaType(for t: HKWorkoutActivityType) -> String {
+        switch t {
+        case .cycling:            return "Ride"
+        case .running:            return "Run"
+        case .hiking:             return "Hike"
+        case .walking:            return "Walk"
+        case .swimming:           return "Swim"
+        case .downhillSkiing:     return "AlpineSki"
+        case .crossCountrySkiing: return "NordicSki"
+        case .snowboarding:       return "Snowboard"
+        case .snowSports:         return "Snowshoe"
+        case .rowing:             return "Rowing"
+        case .yoga:               return "Yoga"
+        case .traditionalStrengthTraining, .functionalStrengthTraining, .coreTraining, .crossTraining:
+            return "WeightTraining"
+        default:                  return "Workout"
+        }
+    }
+
+    /// Assemble a full ingest payload for a workout (route + HR + summary).
+    func buildIngestPayload(for workout: HKWorkout) async -> HealthIngestPayload? {
+        let start = workout.startDate
+        let iso = ISO8601DateFormatter(); iso.formatOptions = [.withInternetDateTime]
+
+        var locs = (try? await routeLocations(for: workout)) ?? []
+        // Cap the payload: a long ride can be 10k+ points; ~4000 keeps the
+        // charts smooth without bloating the request.
+        if locs.count > 4000 {
+            let step = Int(ceil(Double(locs.count) / 4000.0))
+            locs = locs.enumerated().filter { $0.offset % step == 0 }.map(\.element)
+        }
+
+        var gps: [[Double]] = []; var altitude: [Double] = []; var timeS: [Double] = []
+        var distStream: [Double] = []; var speedKmh: [Double] = []
+        var cumDist = 0.0
+        for (i, loc) in locs.enumerated() {
+            gps.append([loc.coordinate.latitude, loc.coordinate.longitude])
+            altitude.append(loc.altitude.isFinite ? loc.altitude : 0)
+            timeS.append(loc.timestamp.timeIntervalSince(start))
+            if i > 0 {
+                let d  = loc.distance(from: locs[i - 1])
+                let dt = loc.timestamp.timeIntervalSince(locs[i - 1].timestamp)
+                cumDist += d
+                let sp = loc.speed >= 0 ? loc.speed : (dt > 0 ? d / dt : 0)
+                speedKmh.append(max(0, sp) * 3.6)
+            } else {
+                speedKmh.append(loc.speed >= 0 ? loc.speed * 3.6 : 0)
+            }
+            distStream.append(cumDist)
+        }
+
+        // Heart rate: align to the route timestamps (nearest prior sample).
+        let hrSamples = (try? await heartRateSamples(for: workout)) ?? []
+        var heartrate: [Double] = []
+        if !locs.isEmpty, !hrSamples.isEmpty {
+            var j = 0
+            for loc in locs {
+                while j + 1 < hrSamples.count, hrSamples[j + 1].date <= loc.timestamp { j += 1 }
+                heartrate.append(hrSamples[j].bpm)
+            }
+        }
+        let hrValues = hrSamples.map(\.bpm)
+        let avgHr = hrValues.isEmpty ? nil : hrValues.reduce(0, +) / Double(hrValues.count)
+        let maxHr = hrValues.max()
+
+        let totalDist = workout.totalDistance?.doubleValue(for: .meter()) ?? cumDist
+        var gain = 0.0
+        if altitude.count > 1 {
+            for i in 1..<altitude.count {
+                let d = altitude[i] - altitude[i - 1]
+                if d > 0 { gain += d }
+            }
+        }
+        let calories = workout.totalEnergyBurned?.doubleValue(for: .kilocalorie())
+
+        return HealthIngestPayload(
+            uuid:             workout.uuid.uuidString,
+            type:             stravaType(for: workout.workoutActivityType),
+            name:             nil,
+            start_date:       iso.string(from: start),
+            duration_s:       workout.duration,
+            distance_m:       totalDist,
+            elevation_gain_m: gain,
+            calories:         calories,
+            avg_hr:           avgHr.map { $0.rounded() },
+            max_hr:           maxHr.map { $0.rounded() },
+            gps:              gps,
+            altitude:         altitude,
+            time_s:           timeS,
+            distance_stream:  distStream,
+            heartrate:        heartrate,
+            speed_kmh:        speedKmh,
+        )
+    }
+
+    /// Wake the app whenever a new workout lands in Apple Health, so we can
+    /// ingest it even in the background. Call once, after read authorization.
+    func startObservingWorkouts(_ onNew: @escaping @Sendable () -> Void) {
+        guard Self.isAvailable else { return }
+        let type = HKObjectType.workoutType()
+        let observer = HKObserverQuery(sampleType: type, predicate: nil) { _, completion, error in
+            if error == nil { onNew() }
+            completion()
+        }
+        store.execute(observer)
+        store.enableBackgroundDelivery(for: type, frequency: .immediate) { success, err in
+            if let err {
+                Log.tracking.error("HK background delivery failed: \(err.localizedDescription, privacy: .public)")
+            } else {
+                Log.tracking.notice("HK background delivery enabled: \(success)")
+            }
+        }
+    }
+}
