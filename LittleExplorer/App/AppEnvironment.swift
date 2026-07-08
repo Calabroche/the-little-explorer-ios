@@ -101,6 +101,18 @@ final class AppEnvironment {
         })
     }
 
+    /// Explicitly prime Apple Health ingestion from the onboarding screen: this
+    /// fires the system read-permission sheet WHILE the in-app explanation is on
+    /// screen (Apple's recommended priming pattern), then kicks off the
+    /// one-time full-history import. Turns the toggle on if the user had it off,
+    /// since tapping "authorize" is an explicit opt-in.
+    @MainActor
+    func primeHealthKitIngestion() async {
+        guard HealthKitService.isAvailable else { return }
+        if !healthKitEnabled { healthKitEnabled = true }
+        await healthKitSync.primeAndStart()
+    }
+
     /// Called when the app comes to the foreground. Reconciles the
     /// itinerary library with the backend so a route created on the web
     /// (or another device) lands on the phone — and, via the store's

@@ -820,3 +820,81 @@ actor APIClient {
         }
     }
 }
+
+// MARK: - Social layer (feed, profiles, follows, likes, comments)
+// Same-file extension so it can reuse the private request helpers
+// (get/post/patchJSON/emptyPost) and the auth token.
+extension APIClient {
+    /// GET /api/feed?source=following|mine
+    func socialFeed(source: String) async throws -> [SocialFeedItem] {
+        try await get("/api/feed", query: ["source": source])
+    }
+
+    /// GET /api/users/<id> — public profile + visible activities.
+    func socialProfile(userId: String) async throws -> SocialProfile {
+        try await get("/api/users/\(userId)")
+    }
+
+    /// GET /api/users/search?q=
+    func searchSocialUsers(_ q: String) async throws -> [SocialUser] {
+        guard q.count >= 2 else { return [] }
+        return try await get("/api/users/search", query: ["q": q])
+    }
+
+    /// GET /api/users/<id>/connections?type=followers|following
+    func connections(userId: String, type: String) async throws -> [SocialUser] {
+        try await get("/api/users/\(userId)/connections", query: ["type": type])
+    }
+
+    func likeActivity(_ id: Int) async throws {
+        try await emptyPost(method: "POST", path: "/api/activities/\(id)/like")
+    }
+    func unlikeActivity(_ id: Int) async throws {
+        try await emptyPost(method: "DELETE", path: "/api/activities/\(id)/like")
+    }
+
+    func comments(activityId: Int) async throws -> [SocialComment] {
+        try await get("/api/activities/\(activityId)/comments")
+    }
+    func postComment(activityId: Int, body: String) async throws -> SocialComment {
+        struct Body: Encodable { let body: String }
+        let resp: PostCommentResponse = try await post("/api/activities/\(activityId)/comments", body: Body(body: body))
+        return resp.comment
+    }
+    func deleteComment(activityId: Int, commentId: String) async throws {
+        try await sendJSON(method: "DELETE", path: "/api/activities/\(activityId)/comments", json: ["commentId": commentId])
+    }
+
+    func followUser(_ id: String) async throws {
+        try await emptyPost(method: "POST", path: "/api/users/\(id)/follow")
+    }
+    func unfollowUser(_ id: String) async throws {
+        try await emptyPost(method: "DELETE", path: "/api/users/\(id)/follow")
+    }
+
+    func setVisibility(activityId: Int, visibility: ActivityVisibility) async throws {
+        struct VisResp: Decodable { let ok: Bool? }
+        let _: VisResp = try await patchJSON("/api/activities/\(activityId)", jsonObject: ["visibility": visibility.rawValue])
+    }
+
+    /// Void write with an optional JSON body — used for DELETE-with-body
+    /// endpoints the generic helpers don't cover.
+    private func sendJSON(method: String, path: String, json: [String: Any]) async throws {
+        let url = baseURL.appendingPathComponent(path)
+        var request = URLRequest(url: url)
+        request.httpMethod = method
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token = authToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: json)
+        let (data, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse {
+            if (200..<300).contains(http.statusCode) { return }
+            if http.statusCode == 401 { throw APIError.unauthorized }
+            let preview = String(data: data.prefix(200), encoding: .utf8) ?? ""
+            Log.api.error("\(method, privacy: .public) \(path, privacy: .public) — HTTP \(http.statusCode) · \(preview, privacy: .public)")
+            throw APIError.http(http.statusCode)
+        }
+    }
+}

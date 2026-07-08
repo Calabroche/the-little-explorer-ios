@@ -62,6 +62,10 @@ struct RootView: View {
                 .tabItem { Label("Activités", systemImage: "list.bullet") }
                 .tag(AppTab.feed)
 
+            SocialFeedView()
+                .tabItem { Label("Suivis", systemImage: "heart") }
+                .tag(AppTab.social)
+
             RideTrackerView()
                 .tabItem { Label("Track", systemImage: "record.circle") }
                 .tag(AppTab.track)
