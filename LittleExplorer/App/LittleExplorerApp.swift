@@ -1,10 +1,14 @@
 import Foundation
 import SwiftUI
+import UIKit
 
 @main
 struct LittleExplorerApp: App {
     @State private var environment = AppEnvironment()
     @Environment(\.scenePhase) private var scenePhase
+    // Bridges UIKit's remote-notification callbacks into our SwiftUI app so we
+    // can receive the APNs device token and register it server-side.
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
     init() {
         // Notice-level log on every launch so the Diagnostics view
@@ -54,5 +58,25 @@ struct LittleExplorerApp: App {
                     if phase == .active { environment.refreshOnForeground() }
                 }
         }
+    }
+}
+
+/// Receives APNs remote-notification callbacks. The token arrives here after
+/// `UIApplication.registerForRemoteNotifications()` (kicked off post-login);
+/// we upload it to the back-end so pushes for likes/comments/follows reach
+/// this device. Uploads best-effort — a 401 (not yet signed in) is retried on
+/// the next registration once the session token is set.
+final class AppDelegate: NSObject, UIApplicationDelegate {
+    func application(_ application: UIApplication,
+                     didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        let hex = deviceToken.map { String(format: "%02x", $0) }.joined()
+        UserDefaults.standard.set(hex, forKey: "tle.apnsToken")
+        Log.app.notice("APNs token registered")
+        Task { try? await APIClient.shared.registerDeviceToken(hex) }
+    }
+
+    func application(_ application: UIApplication,
+                     didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        Log.app.error("APNs registration failed: \(error.localizedDescription, privacy: .public)")
     }
 }

@@ -877,6 +877,13 @@ extension APIClient {
         let _: VisResp = try await patchJSON("/api/activities/\(activityId)", jsonObject: ["visibility": visibility.rawValue])
     }
 
+    /// POST /api/me/device-token — register this device's APNs token for push.
+    func registerDeviceToken(_ token: String) async throws {
+        struct Body: Encodable { let token: String; let platform: String }
+        struct Resp: Decodable { let ok: Bool? }
+        let _: Resp = try await post("/api/me/device-token", body: Body(token: token, platform: "ios"))
+    }
+
     /// Void write with an optional JSON body — used for DELETE-with-body
     /// endpoints the generic helpers don't cover.
     private func sendJSON(method: String, path: String, json: [String: Any]) async throws {

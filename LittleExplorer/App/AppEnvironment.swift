@@ -1,6 +1,8 @@
 import Foundation
 import Observation
 import SwiftUI
+import UIKit
+import UserNotifications
 
 @Observable
 final class AppEnvironment {
@@ -99,6 +101,18 @@ final class AppEnvironment {
         healthKitSync.start(isEnabled: { [weak self] in
             self?.healthKitEnabled ?? false
         })
+    }
+
+    /// Ask for notification permission and register for remote (APNs) push, so
+    /// the user gets a notification when someone likes / comments / follows.
+    /// Called once we're signed in (RootView). The device token comes back via
+    /// AppDelegate and is uploaded to the back-end.
+    @MainActor
+    func registerForPushNotifications() {
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]) { granted, _ in
+            guard granted else { return }
+            Task { @MainActor in UIApplication.shared.registerForRemoteNotifications() }
+        }
     }
 
     /// Explicitly prime Apple Health ingestion from the onboarding screen: this
