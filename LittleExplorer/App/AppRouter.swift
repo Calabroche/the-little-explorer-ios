@@ -2,7 +2,7 @@ import Foundation
 import Observation
 
 enum AppTab: Hashable, CaseIterable, Sendable {
-    case feed, social, track, itinerary, analytics, profile
+    case feed, track, itinerary, analytics, profile
 }
 
 /// Shared cross-tab router. Owns:

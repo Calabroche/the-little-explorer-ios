@@ -7,10 +7,24 @@ import SwiftUI
 struct FeedView: View {
     @Environment(AppEnvironment.self) private var environment
 
+    // Social profile header state (this view is the Profil tab now).
+    @State private var social: SocialProfile?
+    @State private var showAccount = false
+    @State private var connTarget: ConnectionsTarget?
+    private struct ConnectionsTarget: Identifiable { let id = UUID(); let userId: String; let type: String }
+
     var body: some View {
         @Bindable var env = environment
         NavigationStack {
             VStack(spacing: 0) {
+                ProfileHeaderView(
+                    profile: social,
+                    activityCount: env.activityStore.activities.count,
+                    onOpenConnections: { type in
+                        if let id = social?.id { connTarget = ConnectionsTarget(userId: id, type: type) }
+                    },
+                    onSettings: { showAccount = true }
+                )
                 BrandHeader()
                 content(env: env)
             }
@@ -18,9 +32,16 @@ struct FeedView: View {
             // "What's new" popup — surfaces the latest undismissed feature.
             .overlay { FeatureAnnouncementView() }
             .toolbar(.hidden, for: .navigationBar)
+            .sheet(isPresented: $showAccount) { ProfileView() }
+            .sheet(item: $connTarget) { t in ConnectionsSheet(userId: t.userId, type: t.type) }
             .task {
                 await env.activityStore.load(user: env.currentUser)
                 await Self.backgroundSyncStravaIfEmpty(env: env)
+            }
+            .task {
+                if let id = env.session.profile?.id {
+                    social = try? await APIClient.shared.socialProfile(userId: id)
+                }
             }
             .refreshable {
                 // Pull-to-refresh is an explicit user gesture — always

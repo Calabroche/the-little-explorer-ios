@@ -58,13 +58,11 @@ struct RootView: View {
     private var authenticatedRoot: some View {
         @Bindable var router = router
         TabView(selection: $router.selectedTab) {
-            FeedView()
-                .tabItem { Label("Activités", systemImage: "list.bullet") }
-                .tag(AppTab.feed)
-
+            // Home = the social feed (activities from people you follow),
+            // Strava-style. Search + your own data live elsewhere now.
             SocialFeedView()
-                .tabItem { Label("Suivis", systemImage: "heart") }
-                .tag(AppTab.social)
+                .tabItem { Label("Accueil", systemImage: "house") }
+                .tag(AppTab.feed)
 
             RideTrackerView()
                 .tabItem { Label("Track", systemImage: "record.circle") }
@@ -78,7 +76,9 @@ struct RootView: View {
                 .tabItem { Label("Analyses", systemImage: "chart.bar.xaxis") }
                 .tag(AppTab.analytics)
 
-            ProfileView()
+            // Profil = your data: follower/following counts + all your
+            // activities with the heatmap (FeedView is your dashboard).
+            FeedView()
                 .tabItem { Label("Profil", systemImage: "person.crop.circle") }
                 .tag(AppTab.profile)
         }

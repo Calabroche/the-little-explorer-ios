@@ -44,31 +44,22 @@ struct SocialFollowButton: View {
 /// The "Suivis" tab: a social feed (people you follow + you), a source
 /// toggle, and a user search to grow your following.
 struct SocialFeedView: View {
-    @State private var source = "following"
+    @Environment(AppRouter.self) private var router
+    @Environment(AppEnvironment.self) private var environment
     @State private var items: [SocialFeedItem] = []
     @State private var loading = true
-    @State private var query = ""
-    @State private var results: [SocialUser] = []
+    @State private var showSearch = false
     @State private var openedProfile: String?
+    @State private var myImage: String?
 
     var body: some View {
         NavigationStack {
             ScrollView {
-                VStack(spacing: 14) {
-                    searchField
-                    if !results.isEmpty { searchResults }
-                    sourcePicker
-
+                LazyVStack(spacing: 14) {
                     if loading {
-                        ProgressView().padding(.top, 30)
+                        ProgressView().padding(.top, 40)
                     } else if items.isEmpty {
-                        Text(source == "following"
-                             ? "Ton feed est vide. Abonne-toi à des gens avec la recherche ci-dessus."
-                             : "Tu n'as pas encore de sortie.")
-                            .font(.system(size: 13))
-                            .foregroundStyle(AppColors.inkMid)
-                            .multilineTextAlignment(.center)
-                            .padding(.top, 30).padding(.horizontal, 20)
+                        emptyState
                     } else {
                         ForEach(items) { item in
                             SocialCardView(item: item) { openedProfile = $0 }
@@ -78,69 +69,49 @@ struct SocialFeedView: View {
                 .padding(16)
             }
             .background(AppColors.creamDark.ignoresSafeArea())
-            .navigationTitle("Suivis")
+            .navigationTitle("Accueil")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                // Left: my profile avatar → jump to the Profil tab.
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { router.selectedTab = .profile } label: {
+                        AvatarView(url: myImage, name: environment.session.profile?.name, size: 30)
+                    }
+                }
+                // Right: search friends.
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showSearch = true } label: {
+                        Image(systemName: "magnifyingglass").foregroundStyle(AppColors.terra)
+                    }
+                }
+            }
             .navigationDestination(item: $openedProfile) { uid in
                 PublicProfileView(userId: uid)
             }
-            .task(id: source) { await loadFeed() }
-            .task(id: query) { await runSearch() }
+            .sheet(isPresented: $showSearch) { FriendSearchView() }
+            .task { await load() }
+            .refreshable { await load() }
         }
     }
 
-    private var searchField: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass").foregroundStyle(AppColors.inkLight)
-            TextField("Trouver des amis…", text: $query)
-                .autocorrectionDisabled()
+    private var emptyState: some View {
+        VStack(spacing: 10) {
+            Image(systemName: "person.2").font(.system(size: 40)).foregroundStyle(AppColors.inkLight)
+            Text("Ton fil est vide.").font(.system(size: 15, weight: .semibold)).foregroundStyle(AppColors.ink)
+            Text("Cherche des amis avec la loupe en haut à droite pour voir leurs sorties ici.")
+                .font(.system(size: 13)).foregroundStyle(AppColors.inkMid).multilineTextAlignment(.center)
         }
-        .padding(10)
-        .background(AppColors.cream)
-        .overlay(RoundedRectangle(cornerRadius: 8).stroke(AppColors.creamBorder, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .padding(.top, 60).padding(.horizontal, 30)
     }
 
-    private var searchResults: some View {
-        VStack(spacing: 0) {
-            ForEach(results) { u in
-                HStack(spacing: 10) {
-                    Button { openedProfile = u.id } label: {
-                        HStack(spacing: 10) {
-                            AvatarView(url: u.image, name: u.name, size: 30)
-                            Text(u.name ?? "Anonyme").font(.system(size: 14, weight: .semibold)).foregroundStyle(AppColors.ink)
-                        }
-                    }
-                    Spacer()
-                    SocialFollowButton(userId: u.id, following: u.isFollowing)
-                }
-                .padding(.vertical, 8).padding(.horizontal, 12)
-                Divider()
-            }
-        }
-        .background(AppColors.cream)
-        .clipShape(RoundedRectangle(cornerRadius: 8))
-    }
-
-    private var sourcePicker: some View {
-        Picker("", selection: $source) {
-            Text("Suivis").tag("following")
-            Text("Moi").tag("mine")
-        }
-        .pickerStyle(.segmented)
-    }
-
-    private func loadFeed() async {
+    @MainActor private func load() async {
         loading = true
-        do { items = try await APIClient.shared.socialFeed(source: source) }
+        do { items = try await APIClient.shared.socialFeed(source: "following") }
         catch { items = [] }
         loading = false
-    }
-    private func runSearch() async {
-        let q = query.trimmingCharacters(in: .whitespaces)
-        guard q.count >= 2 else { results = []; return }
-        try? await Task.sleep(nanoseconds: 250_000_000)
-        if Task.isCancelled { return }
-        do { results = try await APIClient.shared.searchSocialUsers(q) }
-        catch { results = [] }
+        if myImage == nil, let id = environment.session.profile?.id {
+            myImage = (try? await APIClient.shared.socialProfile(userId: id))?.image
+        }
     }
 }
 
