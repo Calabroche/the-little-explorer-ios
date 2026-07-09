@@ -29,24 +29,25 @@ struct SocialCardView: View {
             header
             if let title = item.title, !title.isEmpty {
                 Text(title)
-                    .font(.system(size: 17, weight: .heavy, design: .serif))
+                    .font(.system(size: 21, weight: .heavy, design: .serif))
                     .foregroundStyle(AppColors.ink)
             }
             if item.gps.count >= 2 {
                 TraceShape(points: item.gps)
-                    .stroke(AppColors.terra, style: StrokeStyle(lineWidth: 2.5, lineCap: .round, lineJoin: .round))
-                    .frame(height: 150)
+                    .stroke(AppColors.terra, style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
+                    .frame(height: 190)
                     .frame(maxWidth: .infinity)
                     .background(AppColors.cream)
-                    .clipShape(RoundedRectangle(cornerRadius: 6))
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(AppColors.creamBorder, lineWidth: 1))
             }
             stats
             actions
         }
-        .padding(14)
+        .padding(16)
         .background(AppColors.cream)
-        .overlay(RoundedRectangle(cornerRadius: 10).stroke(AppColors.creamBorder, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 10))
+        .overlay(RoundedRectangle(cornerRadius: 14).stroke(AppColors.creamBorder, lineWidth: 1))
+        .clipShape(RoundedRectangle(cornerRadius: 14))
         .sheet(isPresented: $showComments) {
             CommentsView(activityId: item.id) { commentCount = $0 }
         }
@@ -58,18 +59,18 @@ struct SocialCardView: View {
     }
 
     private var header: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 12) {
             Button { onOpenProfile(item.author.id) } label: {
-                AvatarView(url: item.author.image, name: item.author.name)
+                AvatarView(url: item.author.image, name: item.author.name, size: 46)
             }
             VStack(alignment: .leading, spacing: 1) {
                 Button { onOpenProfile(item.author.id) } label: {
                     Text(item.author.name ?? "Anonyme")
-                        .font(.system(size: 14, weight: .bold))
+                        .font(.system(size: 15, weight: .bold))
                         .foregroundStyle(AppColors.ink)
                 }
-                Text("\(SocialFmt.shortDate(item.date)) · \(item.sport)")
-                    .font(.system(size: 11))
+                Text("\(SocialFmt.shortDate(item.date)) · \(SocialFmt.sportLabel(item.sport))")
+                    .font(.system(size: 12))
                     .foregroundStyle(AppColors.inkLight)
             }
             Spacer()
@@ -103,23 +104,25 @@ struct SocialCardView: View {
     }
 
     private var actions: some View {
-        HStack(spacing: 8) {
-            actionButton(liked ? "❤️ \(likeCount)" : "🤍 \(likeCount)", active: liked) { toggleLike() }
-            actionButton("💬 \(commentCount)") { showComments = true }
-            actionButton("↗ Partager") { presentShare() }
+        VStack(spacing: 0) {
+            Divider()
+            HStack(spacing: 0) {
+                actionButton(liked ? "❤️" : "🤍", likeCount > 0 ? "\(likeCount)" : "Kudos", active: liked) { toggleLike() }
+                actionButton("💬", commentCount > 0 ? "\(commentCount)" : "Commenter") { showComments = true }
+                actionButton("↗", "Partager") { presentShare() }
+            }
         }
-        .padding(.top, 4)
+        .padding(.top, 6)
     }
-    private func actionButton(_ label: String, active: Bool = false, _ action: @escaping () -> Void) -> some View {
+    private func actionButton(_ icon: String, _ label: String, active: Bool = false, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Text(label)
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(AppColors.inkMid)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 8)
-                .background(active ? AppColors.creamDark : Color.clear)
-                .overlay(RoundedRectangle(cornerRadius: 6).stroke(AppColors.creamBorder, lineWidth: 1))
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+            HStack(spacing: 6) {
+                Text(icon).font(.system(size: 15))
+                Text(label).font(.system(size: 13, weight: .semibold))
+            }
+            .foregroundStyle(active ? AppColors.terra : AppColors.inkMid)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
         }
     }
 

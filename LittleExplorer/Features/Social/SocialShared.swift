@@ -89,6 +89,21 @@ enum SocialFmt {
         guard let kmh else { return "—" }
         return String(format: "%.1f km/h", kmh)
     }
+    static func sportLabel(_ s: String) -> String {
+        switch s {
+        case "cycling":   return "Vélo"
+        case "running":   return "Course à pied"
+        case "walking":   return "Marche"
+        case "hiking":    return "Randonnée"
+        case "swim":      return "Natation"
+        case "rowing":    return "Aviron"
+        case "ski":       return "Ski"
+        case "snowboard": return "Snowboard"
+        case "yoga":      return "Yoga"
+        case "workout":   return "Renforcement"
+        default:          return s.isEmpty ? "Sortie" : s.prefix(1).uppercased() + s.dropFirst()
+        }
+    }
     static func shortDate(_ iso: String) -> String {
         let withFrac = ISO8601DateFormatter()
         withFrac.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
