@@ -310,7 +310,7 @@ private struct FeedScrollView: View {
                 .padding(.bottom, 16)
             }
             .navigationDestination(for: RideRecord.self) { record in
-                ActivityDetailView(activity: record)
+                ActivityDetailView(activity: record, canDelete: true)
             }
             .onChange(of: router.feedScrollTrigger) { _, _ in
                 withAnimation(.easeInOut(duration: 0.45)) {

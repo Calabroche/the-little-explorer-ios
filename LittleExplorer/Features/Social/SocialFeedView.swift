@@ -45,7 +45,7 @@ struct SocialFollowButton: View {
 // an activity detail (multiple `navigationDestination(item:)` of different
 // types on one stack is unreliable — this is the robust pattern).
 struct NavProfile: Hashable { let id: String }
-struct NavActivity: Hashable { let record: RideRecord }
+struct NavActivity: Hashable { let record: RideRecord; let canDelete: Bool }
 
 /// The "Suivis" tab: a social feed (people you follow + you), a source
 /// toggle, and a user search to grow your following.
@@ -71,7 +71,7 @@ struct SocialFeedView: View {
                         ForEach(items) { item in
                             SocialCardView(item: item,
                                            onOpenProfile: { path.append(NavProfile(id: $0)) },
-                                           onOpenActivity: { id in Task { if let r = try? await APIClient.shared.activity(id: id) { path.append(NavActivity(record: r)) } } })
+                                           onOpenActivity: { id in Task { if let r = try? await APIClient.shared.activity(id: id) { path.append(NavActivity(record: r, canDelete: item.isMine)) } } })
                         }
                     }
                 }
@@ -103,7 +103,7 @@ struct SocialFeedView: View {
                 PublicProfileView(userId: p.id, path: $path)
             }
             .navigationDestination(for: NavActivity.self) { a in
-                ActivityDetailView(activity: a.record)
+                ActivityDetailView(activity: a.record, canDelete: a.canDelete)
             }
             .sheet(isPresented: $showSearch) { FriendSearchView() }
             .sheet(isPresented: $showWhatsNew) { WhatsNewView(initialRunning: environment.selectedSport == .running) }
@@ -159,7 +159,7 @@ struct PublicProfileView: View {
                     ForEach(p.activities) { item in
                         SocialCardView(item: item,
                                        onOpenProfile: { path.append(NavProfile(id: $0)) },
-                                       onOpenActivity: { id in Task { if let r = try? await APIClient.shared.activity(id: id) { path.append(NavActivity(record: r)) } } })
+                                       onOpenActivity: { id in Task { if let r = try? await APIClient.shared.activity(id: id) { path.append(NavActivity(record: r, canDelete: item.isMine)) } } })
                     }
                 } else if loading {
                     ProgressView().frame(maxWidth: .infinity).padding(.top, 40)

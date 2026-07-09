@@ -19,6 +19,9 @@ import SwiftUI
 ///  11. Effort & énergie 3-column grid (Puissance / Cardio / Mécanique & Météo)
 struct ActivityDetailView: View {
     let activity: RideRecord
+    /// When true, this is one of the viewer's OWN server-side rides, so we
+    /// offer delete even for Strava/HealthKit-synced ones (positive id).
+    var canDelete: Bool = false
 
     @State private var selectedDist: Double?
     /// Which chart the user last touched. Drives where the scrub card
@@ -220,7 +223,7 @@ struct ActivityDetailView: View {
             // Trash icon only for local rides (negative id = recorded
             // by Track or saved at the end of Naviguer). Strava-sourced
             // rides should be deleted on Strava, not here.
-            if isLocalRide {
+            if isLocalRide || canDelete {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
                         showDeleteConfirm = true
@@ -235,10 +238,10 @@ struct ActivityDetailView: View {
         .alert("Supprimer cette sortie ?", isPresented: $showDeleteConfirm) {
             Button("Annuler", role: .cancel) {}
             Button("Supprimer", role: .destructive) {
-                deleteLocalRide()
+                performDelete()
             }
         } message: {
-            Text("La sortie sera retirée de Petit Explorer (le workout dans l'app Santé reste, supprime-le là-bas si tu veux).")
+            Text("La sortie sera retirée de The Little Explorer (un éventuel workout Apple Santé reste, supprime-le là-bas si tu veux).")
         }
         .onAppear {
             // Build chartData + derive hrRange once. This is the heavy
@@ -516,6 +519,17 @@ struct ActivityDetailView: View {
         environment.activityStore.refreshLocal(user: environment.currentUser)
         Log.tracking.notice("deleted local ride id=\(activity.id)")
         dismiss()
+    }
+
+    /// Delete either a local ride (LocalRideStore) or a server-side ride
+    /// (Strava/HealthKit), then refresh the feed and dismiss.
+    private func performDelete() {
+        if isLocalRide { deleteLocalRide(); return }
+        Task {
+            try? await APIClient.shared.deleteActivity(activity.id)
+            await environment.activityStore.load(user: environment.currentUser, force: true)
+            await MainActor.run { dismiss() }
+        }
     }
 
     /// Computed once after chartData is built. Mirrors the previous

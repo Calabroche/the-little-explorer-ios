@@ -877,6 +877,11 @@ extension APIClient {
         let _: VisResp = try await patchJSON("/api/activities/\(activityId)", jsonObject: ["visibility": visibility.rawValue])
     }
 
+    /// DELETE /api/activities/<id> — permanently remove one of your own rides.
+    func deleteActivity(_ id: Int) async throws {
+        try await emptyPost(method: "DELETE", path: "/api/activities/\(id)")
+    }
+
     /// GET /api/activities?activityId=X — ONE fully-computed activity (map,
     /// power, FTP, zones, montées…), which may belong to another user. The
     /// server computes it with the OWNER's profile and enforces visibility, so

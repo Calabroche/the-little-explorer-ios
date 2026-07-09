@@ -37,7 +37,7 @@ struct FriendSearchView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Fermer") { dismiss() } } }
             .navigationDestination(for: NavProfile.self) { PublicProfileView(userId: $0.id, path: $path) }
-            .navigationDestination(for: NavActivity.self) { ActivityDetailView(activity: $0.record) }
+            .navigationDestination(for: NavActivity.self) { ActivityDetailView(activity: $0.record, canDelete: $0.canDelete) }
             .task(id: query) { await runSearch() }
         }
     }
@@ -90,7 +90,7 @@ struct ConnectionsSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Fermer") { dismiss() } } }
             .navigationDestination(for: NavProfile.self) { PublicProfileView(userId: $0.id, path: $path) }
-            .navigationDestination(for: NavActivity.self) { ActivityDetailView(activity: $0.record) }
+            .navigationDestination(for: NavActivity.self) { ActivityDetailView(activity: $0.record, canDelete: $0.canDelete) }
             .task { await load() }
         }
     }
