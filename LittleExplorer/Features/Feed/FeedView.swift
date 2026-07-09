@@ -10,6 +10,7 @@ struct FeedView: View {
     // Social profile header state (this view is the Profil tab now).
     @State private var social: SocialProfile?
     @State private var showAccount = false
+    @State private var showWhatsNew = false
     @State private var connTarget: ConnectionsTarget?
     private struct ConnectionsTarget: Identifiable { let id = UUID(); let userId: String; let type: String }
 
@@ -23,9 +24,9 @@ struct FeedView: View {
                     onOpenConnections: { type in
                         if let id = social?.id { connTarget = ConnectionsTarget(userId: id, type: type) }
                     },
-                    onSettings: { showAccount = true }
+                    onSettings: { showAccount = true },
+                    onInfo: { showWhatsNew = true }
                 )
-                BrandHeader()
                 content(env: env)
             }
             .background(AppColors.cream)
@@ -33,6 +34,7 @@ struct FeedView: View {
             .overlay { FeatureAnnouncementView() }
             .toolbar(.hidden, for: .navigationBar)
             .sheet(isPresented: $showAccount) { ProfileView() }
+            .sheet(isPresented: $showWhatsNew) { WhatsNewView(initialRunning: env.selectedSport == .running) }
             .sheet(item: $connTarget) { t in ConnectionsSheet(userId: t.userId, type: t.type) }
             .task {
                 await env.activityStore.load(user: env.currentUser)

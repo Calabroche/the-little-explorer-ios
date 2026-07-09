@@ -49,6 +49,7 @@ struct SocialFeedView: View {
     @State private var items: [SocialFeedItem] = []
     @State private var loading = true
     @State private var showSearch = false
+    @State private var showWhatsNew = false
     @State private var openedProfile: String?
     @State private var myImage: String?
 
@@ -78,7 +79,12 @@ struct SocialFeedView: View {
                         AvatarView(url: myImage, name: environment.session.profile?.name, size: 30)
                     }
                 }
-                // Right: search friends.
+                // Right: info + search friends.
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showWhatsNew = true } label: {
+                        Image(systemName: "info.circle").foregroundStyle(AppColors.terra)
+                    }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { showSearch = true } label: {
                         Image(systemName: "magnifyingglass").foregroundStyle(AppColors.terra)
@@ -89,6 +95,7 @@ struct SocialFeedView: View {
                 PublicProfileView(userId: uid)
             }
             .sheet(isPresented: $showSearch) { FriendSearchView() }
+            .sheet(isPresented: $showWhatsNew) { WhatsNewView(initialRunning: environment.selectedSport == .running) }
             .task { await load() }
             .refreshable { await load() }
         }

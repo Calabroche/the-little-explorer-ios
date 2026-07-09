@@ -108,6 +108,7 @@ struct ProfileHeaderView: View {
     let activityCount: Int
     var onOpenConnections: (String) -> Void = { _ in }
     var onSettings: () -> Void = {}
+    var onInfo: () -> Void = {}
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -122,6 +123,9 @@ struct ProfileHeaderView: View {
                     }
                 }
                 Spacer()
+                Button(action: onInfo) {
+                    Image(systemName: "info.circle").font(.system(size: 18)).foregroundStyle(AppColors.terra)
+                }
                 Button(action: onSettings) {
                     Image(systemName: "gearshape").font(.system(size: 18)).foregroundStyle(AppColors.inkMid)
                 }
