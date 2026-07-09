@@ -41,6 +41,12 @@ struct SocialFollowButton: View {
     }
 }
 
+// Typed navigation values so ONE NavigationStack can push both a profile and
+// an activity detail (multiple `navigationDestination(item:)` of different
+// types on one stack is unreliable — this is the robust pattern).
+struct NavProfile: Hashable { let id: String }
+struct NavActivity: Hashable { let record: RideRecord }
+
 /// The "Suivis" tab: a social feed (people you follow + you), a source
 /// toggle, and a user search to grow your following.
 struct SocialFeedView: View {
@@ -50,12 +56,11 @@ struct SocialFeedView: View {
     @State private var loading = true
     @State private var showSearch = false
     @State private var showWhatsNew = false
-    @State private var openedProfile: String?
-    @State private var openedActivity: RideRecord?
+    @State private var path = NavigationPath()
     @State private var myImage: String?
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollView {
                 LazyVStack(spacing: 14) {
                     if loading {
@@ -65,8 +70,8 @@ struct SocialFeedView: View {
                     } else {
                         ForEach(items) { item in
                             SocialCardView(item: item,
-                                           onOpenProfile: { openedProfile = $0 },
-                                           onOpenActivity: { id in Task { await openActivity(id) } })
+                                           onOpenProfile: { path.append(NavProfile(id: $0)) },
+                                           onOpenActivity: { id in Task { if let r = try? await APIClient.shared.activity(id: id) { path.append(NavActivity(record: r)) } } })
                         }
                     }
                 }
@@ -94,11 +99,11 @@ struct SocialFeedView: View {
                     }
                 }
             }
-            .navigationDestination(item: $openedProfile) { uid in
-                PublicProfileView(userId: uid)
+            .navigationDestination(for: NavProfile.self) { p in
+                PublicProfileView(userId: p.id, path: $path)
             }
-            .navigationDestination(item: $openedActivity) { record in
-                ActivityDetailView(activity: record)
+            .navigationDestination(for: NavActivity.self) { a in
+                ActivityDetailView(activity: a.record)
             }
             .sheet(isPresented: $showSearch) { FriendSearchView() }
             .sheet(isPresented: $showWhatsNew) { WhatsNewView(initialRunning: environment.selectedSport == .running) }
@@ -126,23 +131,16 @@ struct SocialFeedView: View {
             myImage = (try? await APIClient.shared.socialProfile(userId: id))?.image
         }
     }
-
-    /// Fetch the full activity (owner's profile, server-computed) and push the
-    /// same detail view as your own rides.
-    @MainActor private func openActivity(_ id: Int) async {
-        openedActivity = try? await APIClient.shared.activity(id: id)
-    }
 }
 
 /// A user's public profile: identity, follow button, and their visible
 /// activities. Tapping another author pushes a nested profile.
 struct PublicProfileView: View {
     let userId: String
+    @Binding var path: NavigationPath
 
     @State private var profile: SocialProfile?
     @State private var loading = true
-    @State private var openedProfile: String?
-    @State private var openedActivity: RideRecord?
 
     var body: some View {
         ScrollView {
@@ -160,8 +158,8 @@ struct PublicProfileView: View {
                     }
                     ForEach(p.activities) { item in
                         SocialCardView(item: item,
-                                       onOpenProfile: { openedProfile = $0 },
-                                       onOpenActivity: { id in Task { openedActivity = try? await APIClient.shared.activity(id: id) } })
+                                       onOpenProfile: { path.append(NavProfile(id: $0)) },
+                                       onOpenActivity: { id in Task { if let r = try? await APIClient.shared.activity(id: id) { path.append(NavActivity(record: r)) } } })
                     }
                 } else if loading {
                     ProgressView().frame(maxWidth: .infinity).padding(.top, 40)
@@ -174,12 +172,7 @@ struct PublicProfileView: View {
         .background(AppColors.creamDark.ignoresSafeArea())
         .navigationTitle(profile?.name ?? "Profil")
         .navigationBarTitleDisplayMode(.inline)
-        .navigationDestination(item: $openedProfile) { uid in
-            PublicProfileView(userId: uid)
-        }
-        .navigationDestination(item: $openedActivity) { record in
-            ActivityDetailView(activity: record)
-        }
+        // Navigation destinations are declared once on the root stack.
         .task { await load() }
     }
 

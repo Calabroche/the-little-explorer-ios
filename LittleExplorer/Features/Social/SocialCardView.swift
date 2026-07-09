@@ -30,29 +30,36 @@ struct SocialCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            // Everything above the action row opens the detail on tap. The
-            // buttons inside (author, visibility menu) keep their own taps.
-            VStack(alignment: .leading, spacing: 10) {
-                header
-                if let title = item.title, !title.isEmpty {
-                    Text(title)
-                        .font(.system(size: 21, weight: .heavy, design: .serif))
-                        .foregroundStyle(AppColors.ink)
+            // Author row on top (its own buttons open the profile / menu).
+            header
+            // Everything else is a single button → tapping the title, map or
+            // stats opens the detail. A Button captures taps reliably even over
+            // the MapKit map (an .onTapGesture doesn't).
+            Button {
+                onOpenActivity(item.id)
+            } label: {
+                VStack(alignment: .leading, spacing: 10) {
+                    if let title = item.title, !title.isEmpty {
+                        Text(title)
+                            .font(.system(size: 21, weight: .heavy, design: .serif))
+                            .foregroundStyle(AppColors.ink)
+                    }
+                    if item.gps.count >= 2 {
+                        RouteMiniMap(
+                            gps: item.gps.map { Coordinate(lat: $0[0], lng: $0[1]) },
+                            speedKmh: nil,
+                            fallbackColor: AppColors.terra,
+                            height: 190,
+                        )
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(AppColors.creamBorder, lineWidth: 1))
+                    }
+                    stats
                 }
-                if item.gps.count >= 2 {
-                    RouteMiniMap(
-                        gps: item.gps.map { Coordinate(lat: $0[0], lng: $0[1]) },
-                        speedKmh: nil,
-                        fallbackColor: AppColors.terra,
-                        height: 190,
-                    )
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(AppColors.creamBorder, lineWidth: 1))
-                }
-                stats
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
             }
-            .contentShape(Rectangle())
-            .onTapGesture { onOpenActivity(item.id) }
+            .buttonStyle(.plain)
             actions
         }
         .padding(16)

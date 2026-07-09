@@ -6,15 +6,15 @@ struct FriendSearchView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var query = ""
     @State private var results: [SocialUser] = []
-    @State private var openedProfile: String?
+    @State private var path = NavigationPath()
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollView {
                 VStack(spacing: 0) {
                     ForEach(results) { u in
                         HStack(spacing: 10) {
-                            Button { openedProfile = u.id } label: {
+                            Button { path.append(NavProfile(id: u.id)) } label: {
                                 HStack(spacing: 10) {
                                     AvatarView(url: u.image, name: u.name, size: 38)
                                     Text(u.name ?? "Anonyme").font(.system(size: 15, weight: .semibold)).foregroundStyle(AppColors.ink)
@@ -36,7 +36,8 @@ struct FriendSearchView: View {
             .navigationTitle("Rechercher")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Fermer") { dismiss() } } }
-            .navigationDestination(item: $openedProfile) { PublicProfileView(userId: $0) }
+            .navigationDestination(for: NavProfile.self) { PublicProfileView(userId: $0.id, path: $path) }
+            .navigationDestination(for: NavActivity.self) { ActivityDetailView(activity: $0.record) }
             .task(id: query) { await runSearch() }
         }
     }
@@ -58,10 +59,10 @@ struct ConnectionsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @State private var users: [SocialUser] = []
     @State private var loading = true
-    @State private var openedProfile: String?
+    @State private var path = NavigationPath()
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             ScrollView {
                 VStack(spacing: 0) {
                     if loading { ProgressView().padding(.top, 30) }
@@ -70,7 +71,7 @@ struct ConnectionsSheet: View {
                     }
                     ForEach(users) { u in
                         HStack(spacing: 10) {
-                            Button { openedProfile = u.id } label: {
+                            Button { path.append(NavProfile(id: u.id)) } label: {
                                 HStack(spacing: 10) {
                                     AvatarView(url: u.image, name: u.name, size: 38)
                                     Text(u.name ?? "Anonyme").font(.system(size: 15, weight: .semibold)).foregroundStyle(AppColors.ink)
@@ -88,7 +89,8 @@ struct ConnectionsSheet: View {
             .navigationTitle(type == "followers" ? "Abonnés" : "Abonnements")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Fermer") { dismiss() } } }
-            .navigationDestination(item: $openedProfile) { PublicProfileView(userId: $0) }
+            .navigationDestination(for: NavProfile.self) { PublicProfileView(userId: $0.id, path: $path) }
+            .navigationDestination(for: NavActivity.self) { ActivityDetailView(activity: $0.record) }
             .task { await load() }
         }
     }
