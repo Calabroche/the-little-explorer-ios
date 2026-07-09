@@ -30,26 +30,29 @@ struct SocialCardView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            header
-            if let title = item.title, !title.isEmpty {
-                Text(title)
-                    .font(.system(size: 21, weight: .heavy, design: .serif))
-                    .foregroundStyle(AppColors.ink)
-                    .onTapGesture { onOpenActivity(item.id) }
+            // Everything above the action row opens the detail on tap. The
+            // buttons inside (author, visibility menu) keep their own taps.
+            VStack(alignment: .leading, spacing: 10) {
+                header
+                if let title = item.title, !title.isEmpty {
+                    Text(title)
+                        .font(.system(size: 21, weight: .heavy, design: .serif))
+                        .foregroundStyle(AppColors.ink)
+                }
+                if item.gps.count >= 2 {
+                    RouteMiniMap(
+                        gps: item.gps.map { Coordinate(lat: $0[0], lng: $0[1]) },
+                        speedKmh: nil,
+                        fallbackColor: AppColors.terra,
+                        height: 190,
+                    )
+                    .clipShape(RoundedRectangle(cornerRadius: 10))
+                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(AppColors.creamBorder, lineWidth: 1))
+                }
+                stats
             }
-            if item.gps.count >= 2 {
-                RouteMiniMap(
-                    gps: item.gps.map { Coordinate(lat: $0[0], lng: $0[1]) },
-                    speedKmh: nil,
-                    fallbackColor: AppColors.terra,
-                    height: 190,
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 10))
-                .overlay(RoundedRectangle(cornerRadius: 10).stroke(AppColors.creamBorder, lineWidth: 1))
-                .contentShape(Rectangle())
-                .onTapGesture { onOpenActivity(item.id) }
-            }
-            stats
+            .contentShape(Rectangle())
+            .onTapGesture { onOpenActivity(item.id) }
             actions
         }
         .padding(16)
