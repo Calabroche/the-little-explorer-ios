@@ -39,9 +39,10 @@ struct RootView: View {
                 // Now that the bearer token is set, start pulling workouts from
                 // Apple Health into the back-end (Strava-independent ingestion).
                 environment.startHealthKitSync()
-                // Ask for push permission + register the device for APNs so
-                // likes / comments / follows notify this device.
-                environment.registerForPushNotifications()
+                // Push notifications are OFF for now — they need a paid Apple
+                // Developer account (APNs key + Push capability). The code is
+                // kept dormant; re-add aps-environment + this call to enable.
+                // environment.registerForPushNotifications()
                 // First request right after sign-in: fetch the profile
                 // so the UI has something to render (avatar, name).
                 do {
