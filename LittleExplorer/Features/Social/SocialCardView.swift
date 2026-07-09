@@ -33,13 +33,14 @@ struct SocialCardView: View {
                     .foregroundStyle(AppColors.ink)
             }
             if item.gps.count >= 2 {
-                TraceShape(points: item.gps)
-                    .stroke(AppColors.terra, style: StrokeStyle(lineWidth: 3, lineCap: .round, lineJoin: .round))
-                    .frame(height: 190)
-                    .frame(maxWidth: .infinity)
-                    .background(AppColors.cream)
-                    .clipShape(RoundedRectangle(cornerRadius: 10))
-                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(AppColors.creamBorder, lineWidth: 1))
+                RouteMiniMap(
+                    gps: item.gps.map { Coordinate(lat: $0[0], lng: $0[1]) },
+                    speedKmh: nil,
+                    fallbackColor: AppColors.terra,
+                    height: 190,
+                )
+                .clipShape(RoundedRectangle(cornerRadius: 10))
+                .overlay(RoundedRectangle(cornerRadius: 10).stroke(AppColors.creamBorder, lineWidth: 1))
             }
             stats
             actions
