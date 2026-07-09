@@ -51,6 +51,7 @@ struct SocialFeedView: View {
     @State private var showSearch = false
     @State private var showWhatsNew = false
     @State private var openedProfile: String?
+    @State private var openedActivity: RideRecord?
     @State private var myImage: String?
 
     var body: some View {
@@ -63,7 +64,9 @@ struct SocialFeedView: View {
                         emptyState
                     } else {
                         ForEach(items) { item in
-                            SocialCardView(item: item) { openedProfile = $0 }
+                            SocialCardView(item: item,
+                                           onOpenProfile: { openedProfile = $0 },
+                                           onOpenActivity: { id in Task { await openActivity(id) } })
                         }
                     }
                 }
@@ -94,6 +97,9 @@ struct SocialFeedView: View {
             .navigationDestination(item: $openedProfile) { uid in
                 PublicProfileView(userId: uid)
             }
+            .navigationDestination(item: $openedActivity) { record in
+                ActivityDetailView(activity: record)
+            }
             .sheet(isPresented: $showSearch) { FriendSearchView() }
             .sheet(isPresented: $showWhatsNew) { WhatsNewView(initialRunning: environment.selectedSport == .running) }
             .task { await load() }
@@ -120,6 +126,12 @@ struct SocialFeedView: View {
             myImage = (try? await APIClient.shared.socialProfile(userId: id))?.image
         }
     }
+
+    /// Fetch the full activity (owner's profile, server-computed) and push the
+    /// same detail view as your own rides.
+    @MainActor private func openActivity(_ id: Int) async {
+        openedActivity = try? await APIClient.shared.activity(id: id)
+    }
 }
 
 /// A user's public profile: identity, follow button, and their visible
@@ -130,6 +142,7 @@ struct PublicProfileView: View {
     @State private var profile: SocialProfile?
     @State private var loading = true
     @State private var openedProfile: String?
+    @State private var openedActivity: RideRecord?
 
     var body: some View {
         ScrollView {
@@ -146,7 +159,9 @@ struct PublicProfileView: View {
                         Text("Aucune sortie visible.").font(.system(size: 13)).foregroundStyle(AppColors.inkLight)
                     }
                     ForEach(p.activities) { item in
-                        SocialCardView(item: item) { openedProfile = $0 }
+                        SocialCardView(item: item,
+                                       onOpenProfile: { openedProfile = $0 },
+                                       onOpenActivity: { id in Task { openedActivity = try? await APIClient.shared.activity(id: id) } })
                     }
                 } else if loading {
                     ProgressView().frame(maxWidth: .infinity).padding(.top, 40)
@@ -161,6 +176,9 @@ struct PublicProfileView: View {
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(item: $openedProfile) { uid in
             PublicProfileView(userId: uid)
+        }
+        .navigationDestination(item: $openedActivity) { record in
+            ActivityDetailView(activity: record)
         }
         .task { await load() }
     }

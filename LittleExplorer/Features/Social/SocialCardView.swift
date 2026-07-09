@@ -5,6 +5,7 @@ import SwiftUI
 struct SocialCardView: View {
     let item: SocialFeedItem
     var onOpenProfile: (String) -> Void = { _ in }
+    var onOpenActivity: (Int) -> Void = { _ in }
 
     @State private var liked: Bool
     @State private var likeCount: Int
@@ -15,9 +16,12 @@ struct SocialCardView: View {
     @State private var showShare = false
     @State private var likeBusy = false
 
-    init(item: SocialFeedItem, onOpenProfile: @escaping (String) -> Void = { _ in }) {
+    init(item: SocialFeedItem,
+         onOpenProfile: @escaping (String) -> Void = { _ in },
+         onOpenActivity: @escaping (Int) -> Void = { _ in }) {
         self.item = item
         self.onOpenProfile = onOpenProfile
+        self.onOpenActivity = onOpenActivity
         _liked        = State(initialValue: item.likedByMe)
         _likeCount    = State(initialValue: item.likeCount)
         _commentCount = State(initialValue: item.commentCount)
@@ -31,6 +35,7 @@ struct SocialCardView: View {
                 Text(title)
                     .font(.system(size: 21, weight: .heavy, design: .serif))
                     .foregroundStyle(AppColors.ink)
+                    .onTapGesture { onOpenActivity(item.id) }
             }
             if item.gps.count >= 2 {
                 RouteMiniMap(
@@ -41,6 +46,8 @@ struct SocialCardView: View {
                 )
                 .clipShape(RoundedRectangle(cornerRadius: 10))
                 .overlay(RoundedRectangle(cornerRadius: 10).stroke(AppColors.creamBorder, lineWidth: 1))
+                .contentShape(Rectangle())
+                .onTapGesture { onOpenActivity(item.id) }
             }
             stats
             actions

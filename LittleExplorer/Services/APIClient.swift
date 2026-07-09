@@ -877,6 +877,14 @@ extension APIClient {
         let _: VisResp = try await patchJSON("/api/activities/\(activityId)", jsonObject: ["visibility": visibility.rawValue])
     }
 
+    /// GET /api/activities?activityId=X — ONE fully-computed activity (map,
+    /// power, FTP, zones, montées…), which may belong to another user. The
+    /// server computes it with the OWNER's profile and enforces visibility, so
+    /// this powers opening a followed user's ride with the full analysis.
+    func activity(id: Int) async throws -> RideRecord {
+        try await get("/api/activities", query: ["activityId": String(id)])
+    }
+
     /// POST /api/me/device-token — register this device's APNs token for push.
     func registerDeviceToken(_ token: String) async throws {
         struct Body: Encodable { let token: String; let platform: String }
