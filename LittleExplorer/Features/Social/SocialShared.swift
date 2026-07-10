@@ -47,8 +47,22 @@ struct AvatarView: View {
         String((name ?? "?").trimmingCharacters(in: .whitespaces).first ?? "?").uppercased()
     }
 
+    /// Custom avatars are stored as `data:image/...;base64,...` URLs which
+    /// AsyncImage/URLSession can't fetch — decode those to a UIImage directly.
+    private var inlineImage: UIImage? {
+        guard let url, url.hasPrefix("data:"),
+              let comma = url.firstIndex(of: ","),
+              let data = Data(base64Encoded: String(url[url.index(after: comma)...])) else { return nil }
+        return UIImage(data: data)
+    }
+
     var body: some View {
-        if let url, let u = URL(string: url), !url.isEmpty {
+        if let inlineImage {
+            Image(uiImage: inlineImage)
+                .resizable().scaledToFill()
+                .frame(width: size, height: size)
+                .clipShape(Circle())
+        } else if let url, url.hasPrefix("http"), let u = URL(string: url) {
             AsyncImage(url: u) { image in
                 image.resizable().scaledToFill()
             } placeholder: {

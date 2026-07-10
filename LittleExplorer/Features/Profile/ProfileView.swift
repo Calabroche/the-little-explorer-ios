@@ -210,7 +210,23 @@ struct ProfileView: View {
         )
     }
 
+    @ViewBuilder
     private func avatar(profile: MeProfile?) -> some View {
+        if let img = decodedAvatar(profile?.image) {
+            Image(uiImage: img)
+                .resizable().scaledToFill()
+                .clipShape(Circle())
+                .overlay(Circle().stroke(.white.opacity(0.4), lineWidth: 1))
+        } else if let url = profile?.image, url.hasPrefix("http"), let u = URL(string: url) {
+            AsyncImage(url: u) { $0.resizable().scaledToFill() } placeholder: { gradientAvatar(profile: profile) }
+                .clipShape(Circle())
+                .overlay(Circle().stroke(.white.opacity(0.4), lineWidth: 1))
+        } else {
+            gradientAvatar(profile: profile)
+        }
+    }
+
+    private func gradientAvatar(profile: MeProfile?) -> some View {
         Circle()
             .fill(
                 LinearGradient(
@@ -225,6 +241,15 @@ struct ProfileView: View {
                     .foregroundStyle(.white),
             )
             .overlay(Circle().stroke(.white.opacity(0.4), lineWidth: 1))
+    }
+
+    /// Decodes a `data:image/...;base64,...` avatar into a UIImage
+    /// (AsyncImage can't fetch data: URLs).
+    private func decodedAvatar(_ url: String?) -> UIImage? {
+        guard let url, url.hasPrefix("data:"),
+              let comma = url.firstIndex(of: ","),
+              let data = Data(base64Encoded: String(url[url.index(after: comma)...])) else { return nil }
+        return UIImage(data: data)
     }
 
     // MARK: - App iOS card (Sport / Theme / Watch)

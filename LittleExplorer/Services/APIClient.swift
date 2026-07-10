@@ -94,6 +94,14 @@ actor APIClient {
         return try await patchJSON("/api/me", jsonObject: body)
     }
 
+    /// PATCH /api/me with a custom profile photo. `dataUrl` is a base64
+    /// `data:image/jpeg;…` string (resized client-side); `nil` clears the
+    /// photo back to the initials avatar. Returns the refreshed profile.
+    func updateAvatar(_ dataUrl: String?) async throws -> MeProfile {
+        let body: [String: Any] = ["image": dataUrl ?? NSNull()]
+        return try await patchJSON("/api/me", jsonObject: body)
+    }
+
     /// POST /api/me/disconnect-strava — unlink the Strava account
     /// without deleting the user. Strava token revoked best-effort,
     /// the accounts row is dropped, athlete_id is nulled. Already-

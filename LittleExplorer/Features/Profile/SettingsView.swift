@@ -1,4 +1,5 @@
 import AVFoundation
+import PhotosUI
 import SwiftUI
 
 /// Mirror of the web's `/settings` page. Edits rider_kg, bike_kg, and
@@ -9,6 +10,11 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var nameText: String = ""
+    // Custom profile photo — picked via PhotosPicker, resized, and saved
+    // straight to PATCH /api/me (independent of the Google/Strava avatar).
+    @State private var photoItem: PhotosPickerItem?
+    @State private var photoBusy: Bool = false
+    @State private var photoError: String?
     @State private var riderKgText: String = ""
     @State private var bikeKgText: String = ""
     @State private var customFtpText: String = ""
@@ -50,8 +56,28 @@ struct SettingsView: View {
         @Bindable var env = environment
         Form {
             Section("Identité") {
+                HStack(spacing: 14) {
+                    AvatarView(url: environment.session.profile?.image, name: environment.session.profile?.name, size: 56)
+                    VStack(alignment: .leading, spacing: 6) {
+                        PhotosPicker(selection: $photoItem, matching: .images) {
+                            Text(photoBusy ? "Envoi…" : (environment.session.profile?.image == nil ? "Ajouter une photo" : "Changer la photo"))
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(AppColors.terra)
+                        }
+                        .disabled(photoBusy)
+                        if environment.session.profile?.image != nil {
+                            Button("Retirer la photo") { Task { await saveAvatar(nil) } }
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                                .disabled(photoBusy)
+                        }
+                    }
+                    Spacer()
+                    if photoBusy { ProgressView() }
+                }
+                if let photoError { Text(photoError).font(.caption).foregroundStyle(.red) }
                 LabeledField(label: "Nom affiché", placeholder: environment.session.profile?.name ?? "auto", text: $nameText, keyboard: .default)
-                Text("Laisse vide pour utiliser le nom de ton compte Google ou Strava.")
+                Text("Ta photo est indépendante de ton compte Google ou Strava. Laisse le nom vide pour reprendre celui de ton compte.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -320,6 +346,10 @@ struct SettingsView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear { hydrateFromProfile() }
         .onChange(of: environment.session.profile?.id) { _, _ in hydrateFromProfile() }
+        .onChange(of: photoItem) { _, item in
+            guard let item else { return }
+            Task { await handlePickedPhoto(item) }
+        }
         .sheet(item: $exportSheetItem) { item in
             ShareSheet(items: [item.fileURL])
         }
@@ -507,6 +537,59 @@ struct SettingsView: View {
             deleteError = "Échec : \(error.localizedDescription)"
             deleteArmed = false
         }
+    }
+
+    /// Loads the picked photo, downsizes it to a small square JPEG data URL,
+    /// and saves it via PATCH /api/me.
+    @MainActor
+    private func handlePickedPhoto(_ item: PhotosPickerItem) async {
+        photoBusy = true
+        photoError = nil
+        defer { photoBusy = false; photoItem = nil }
+        guard let data = try? await item.loadTransferable(type: Data.self),
+              let image = UIImage(data: data),
+              let dataUrl = Self.squareJpegDataUrl(image, side: 256) else {
+            photoError = "Image illisible."
+            return
+        }
+        await saveAvatar(dataUrl)
+    }
+
+    @MainActor
+    private func saveAvatar(_ dataUrl: String?) async {
+        photoBusy = true
+        photoError = nil
+        defer { photoBusy = false }
+        do {
+            let updated = try await environment.api.updateAvatar(dataUrl)
+            environment.session.profile = updated
+        } catch {
+            photoError = "Échec de l'envoi. Réessaie."
+        }
+    }
+
+    /// Center-crops to a square, scales to `side`px, returns a
+    /// `data:image/jpeg;base64,…` URL (~20–40 KB) small enough for users.image.
+    private static func squareJpegDataUrl(_ image: UIImage, side: CGFloat) -> String? {
+        let minEdge = min(image.size.width, image.size.height)
+        let cropRect = CGRect(
+            x: (image.size.width - minEdge) / 2,
+            y: (image.size.height - minEdge) / 2,
+            width: minEdge, height: minEdge,
+        )
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = 1
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format)
+        let square = renderer.image { _ in
+            if let cg = image.cgImage?.cropping(to: cropRect.applying(CGAffineTransform(scaleX: image.scale, y: image.scale))) {
+                UIImage(cgImage: cg, scale: 1, orientation: image.imageOrientation)
+                    .draw(in: CGRect(x: 0, y: 0, width: side, height: side))
+            } else {
+                image.draw(in: CGRect(x: 0, y: 0, width: side, height: side))
+            }
+        }
+        guard let jpeg = square.jpegData(compressionQuality: 0.85) else { return nil }
+        return "data:image/jpeg;base64," + jpeg.base64EncodedString()
     }
 
     private func save() async {
