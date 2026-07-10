@@ -32,9 +32,11 @@ struct SocialCardView: View {
         VStack(alignment: .leading, spacing: 10) {
             // Author row on top (its own buttons open the profile / menu).
             header
+                .padding(.horizontal, 16)
             // Everything else is a single button → tapping the title, map or
             // stats opens the detail. A Button captures taps reliably even over
-            // the MapKit map (an .onTapGesture doesn't).
+            // the MapKit map (an .onTapGesture doesn't). The map is full-bleed
+            // (edge to edge, Strava-style); text/stats keep side padding.
             Button {
                 onOpenActivity(item.id)
             } label: {
@@ -43,29 +45,28 @@ struct SocialCardView: View {
                         Text(title)
                             .font(.system(size: 21, weight: .heavy, design: .serif))
                             .foregroundStyle(AppColors.ink)
+                            .padding(.horizontal, 16)
                     }
                     if item.gps.count >= 2 {
                         RouteMiniMap(
                             gps: item.gps.map { Coordinate(lat: $0[0], lng: $0[1]) },
                             speedKmh: nil,
                             fallbackColor: AppColors.terra,
-                            height: 190,
+                            height: 240,
                         )
-                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(AppColors.creamBorder, lineWidth: 1))
                     }
                     stats
+                        .padding(.horizontal, 16)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             actions
+                .padding(.horizontal, 16)
         }
-        .padding(16)
+        .padding(.vertical, 14)
         .background(AppColors.cream)
-        .overlay(RoundedRectangle(cornerRadius: 14).stroke(AppColors.creamBorder, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 14))
         .sheet(isPresented: $showComments) {
             CommentsView(activityId: item.id) { commentCount = $0 }
         }

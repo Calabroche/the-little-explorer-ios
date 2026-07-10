@@ -62,7 +62,7 @@ struct SocialFeedView: View {
     var body: some View {
         NavigationStack(path: $path) {
             ScrollView {
-                LazyVStack(spacing: 14) {
+                LazyVStack(spacing: 8) {
                     if loading {
                         ProgressView().padding(.top, 40)
                     } else if items.isEmpty {
@@ -75,7 +75,7 @@ struct SocialFeedView: View {
                         }
                     }
                 }
-                .padding(16)
+                .padding(.vertical, 8)
             }
             .background(AppColors.creamDark.ignoresSafeArea())
             .navigationTitle("Accueil")

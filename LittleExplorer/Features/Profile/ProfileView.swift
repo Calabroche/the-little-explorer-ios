@@ -7,6 +7,7 @@ import SwiftUI
 /// each session sees only their own data.
 struct ProfileView: View {
     @Environment(AppEnvironment.self) private var environment
+    @Environment(\.dismiss) private var dismiss
 
     @State private var resyncState: ResyncState = .idle
     enum ResyncState: Equatable {
@@ -32,7 +33,13 @@ struct ProfileView: View {
                 .padding(.bottom, 32)
             }
             .background(AppColors.cream)
-            .toolbar(.hidden, for: .navigationBar)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("Fermer") { dismiss() }
+                        .foregroundStyle(AppColors.terra)
+                }
+            }
             .navigationDestination(for: ProfileRoute.self) { route in
                 switch route {
                 case .settings:         SettingsView()
