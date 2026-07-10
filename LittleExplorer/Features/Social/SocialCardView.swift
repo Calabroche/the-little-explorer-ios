@@ -1,4 +1,50 @@
+import MapKit
 import SwiftUI
+
+/// Renders a static map image with the GPS route drawn on top, via
+/// MKMapSnapshotter — used for the shareable story card so the trace sits on a
+/// real basemap instead of a flat colour.
+enum RouteSnapshot {
+    @MainActor
+    static func image(coords: [CLLocationCoordinate2D], size: CGSize) async -> UIImage? {
+        let pts = coords.filter { CLLocationCoordinate2DIsValid($0) }
+        guard pts.count >= 2 else { return nil }
+
+        var minLat = pts[0].latitude, maxLat = pts[0].latitude
+        var minLng = pts[0].longitude, maxLng = pts[0].longitude
+        for p in pts {
+            minLat = min(minLat, p.latitude);  maxLat = max(maxLat, p.latitude)
+            minLng = min(minLng, p.longitude); maxLng = max(maxLng, p.longitude)
+        }
+        let center = CLLocationCoordinate2D(latitude: (minLat + maxLat) / 2, longitude: (minLng + maxLng) / 2)
+        // ~18% padding so the route isn't glued to the edges.
+        let span = MKCoordinateSpan(latitudeDelta: max((maxLat - minLat) * 1.36, 0.002),
+                                    longitudeDelta: max((maxLng - minLng) * 1.36, 0.002))
+
+        let options = MKMapSnapshotter.Options()
+        options.region = MKCoordinateRegion(center: center, span: span)
+        options.size = size
+        options.scale = 3
+        options.pointOfInterestFilter = .excludingAll
+
+        guard let snapshot = try? await MKMapSnapshotter(options: options).start() else { return nil }
+
+        let renderer = UIGraphicsImageRenderer(size: size)
+        return renderer.image { ctx in
+            snapshot.image.draw(at: .zero)
+            let cg = ctx.cgContext
+            cg.setStrokeColor(UIColor(AppColors.terra).cgColor)
+            cg.setLineWidth(5)
+            cg.setLineJoin(.round)
+            cg.setLineCap(.round)
+            for (i, coord) in pts.enumerated() {
+                let point = snapshot.point(for: coord)
+                if i == 0 { cg.move(to: point) } else { cg.addLine(to: point) }
+            }
+            cg.strokePath()
+        }
+    }
+}
 
 /// One feed / profile card: author header, GPS trace, stats, and the
 /// like / comment / share actions. Owner cards also get a visibility menu.
@@ -170,12 +216,18 @@ struct SocialCardView: View {
         }
     }
     @MainActor private func presentShare() {
-        let card = StoryCardView(item: item).frame(width: 405, height: 720)
-        let renderer = ImageRenderer(content: card)
-        renderer.scale = 3
-        if let img = renderer.uiImage {
-            shareImage = img
-            showShare = true
+        Task {
+            let coords = item.gps.compactMap { g -> CLLocationCoordinate2D? in
+                g.count >= 2 ? CLLocationCoordinate2D(latitude: g[0], longitude: g[1]) : nil
+            }
+            let mapImg = await RouteSnapshot.image(coords: coords, size: CGSize(width: 349, height: 340))
+            let card = StoryCardView(item: item, mapImage: mapImg).frame(width: 405, height: 720)
+            let renderer = ImageRenderer(content: card)
+            renderer.scale = 3
+            if let img = renderer.uiImage {
+                shareImage = img
+                showShare = true
+            }
         }
     }
     private func shareItems(_ img: UIImage) -> [Any] {
@@ -192,6 +244,7 @@ struct SocialCardView: View {
 /// canvas: brand, title, the trace, and the headline stats.
 struct StoryCardView: View {
     let item: SocialFeedItem
+    var mapImage: UIImage? = nil
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("The Little Explorer")
@@ -203,11 +256,23 @@ struct StoryCardView: View {
                 .lineLimit(2)
                 .padding(.top, 6)
 
-            TraceShape(points: item.gps)
-                .stroke(AppColors.terra, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
-                .frame(height: 360)
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 24)
+            // Real basemap with the route on it (falls back to the bare trace
+            // if the snapshot couldn't be generated).
+            if let mapImage {
+                Image(uiImage: mapImage)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(height: 340)
+                    .frame(maxWidth: .infinity)
+                    .clipShape(RoundedRectangle(cornerRadius: 14))
+                    .padding(.vertical, 24)
+            } else {
+                TraceShape(points: item.gps)
+                    .stroke(AppColors.terra, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
+                    .frame(height: 360)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 24)
+            }
 
             HStack {
                 storyStat("DISTANCE", SocialFmt.distance(item.distanceKm))
