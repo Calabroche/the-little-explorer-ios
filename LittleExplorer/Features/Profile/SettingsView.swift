@@ -10,6 +10,7 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var nameText: String = ""
+    @State private var bioText: String = ""
     // Custom profile photo — picked via PhotosPicker, resized, and saved
     // straight to PATCH /api/me (independent of the Google/Strava avatar).
     @State private var photoItem: PhotosPickerItem?
@@ -77,7 +78,14 @@ struct SettingsView: View {
                 }
                 if let photoError { Text(photoError).font(.caption).foregroundStyle(.red) }
                 LabeledField(label: "Nom affiché", placeholder: environment.session.profile?.name ?? "auto", text: $nameText, keyboard: .default)
-                Text("Ta photo est indépendante de ton compte Google ou Strava. Laisse le nom vide pour reprendre celui de ton compte.")
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Description").font(.subheadline).foregroundStyle(.secondary)
+                    TextField("Décris-toi en quelques mots…", text: $bioText, axis: .vertical)
+                        .lineLimit(2...5)
+                        .textInputAutocapitalization(.sentences)
+                    Text("\(bioText.count)/280").font(.caption2).foregroundStyle(.tertiary)
+                }
+                Text("Ta photo et ta description sont visibles sur ton profil. Laisse le nom vide pour reprendre celui de ton compte.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
@@ -400,6 +408,7 @@ struct SettingsView: View {
         // we just show the current name as placeholder text and let
         // the user start typing to override.
         nameText = ""
+        bioText = profile.bio ?? ""
         riderKgText = stored?.riderKg.map { trimmed($0) } ?? trimmed(effective.riderKg)
         bikeKgText = stored?.bikeKg.map { trimmed($0) } ?? trimmed(effective.bikeKg)
         customFtpText = stored?.customFtp.map { String($0) } ?? (effective.customFtp.map { String($0) } ?? "")
@@ -611,9 +620,12 @@ struct SettingsView: View {
         // settings without typing). Non-empty → set the new value.
         let nameTrimmed = nameText.trimmingCharacters(in: .whitespaces)
         let nameField: APIClient.SettingsField<String> = nameTrimmed.isEmpty ? .unchanged : .set(nameTrimmed)
+        // Bio: unlike the name it has no OAuth fallback, so empty → clear.
+        let bioTrimmed = String(bioText.trimmingCharacters(in: .whitespaces).prefix(280))
+        let bioField: APIClient.SettingsField<String> = bioTrimmed.isEmpty ? .clear : .set(bioTrimmed)
 
         do {
-            let updated = try await environment.api.updateSettings(riderKg: rider, bikeKg: bike, customFtp: ftp, name: nameField)
+            let updated = try await environment.api.updateSettings(riderKg: rider, bikeKg: bike, customFtp: ftp, name: nameField, bio: bioField)
             await MainActor.run {
                 environment.session.profile = updated
                 saveMessage = "Paramètres enregistrés."

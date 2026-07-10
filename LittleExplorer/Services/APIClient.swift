@@ -69,6 +69,7 @@ actor APIClient {
         bikeKg: SettingsField<Double>,
         customFtp: SettingsField<Int>,
         name: SettingsField<String> = .unchanged,
+        bio: SettingsField<String> = .unchanged,
     ) async throws -> MeProfile {
         var body: [String: Any] = [:]
         switch riderKg {
@@ -90,6 +91,11 @@ actor APIClient {
         case .unchanged: break
         case .set(let v): body["name"] = v
         case .clear:     body["name"] = NSNull()
+        }
+        switch bio {
+        case .unchanged: break
+        case .set(let v): body["bio"] = v
+        case .clear:     body["bio"] = NSNull()
         }
         return try await patchJSON("/api/me", jsonObject: body)
     }

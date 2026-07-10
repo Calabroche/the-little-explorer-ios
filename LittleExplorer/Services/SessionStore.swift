@@ -136,6 +136,7 @@ struct MeProfile: Codable, Sendable {
     let email:      String?
     let name:       String?
     let image:      String?
+    let bio:        String?
     let athleteId:  Int?
     /// Stored overrides — null fields mean "use defaults" from the
     /// effective fallback ladder (db override → legacy → default).
