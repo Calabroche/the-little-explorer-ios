@@ -124,8 +124,14 @@ struct SocialFeedView: View {
 
     @MainActor private func load() async {
         loading = true
-        do { items = try await APIClient.shared.socialFeed(source: "following") }
-        catch { items = [] }
+        do {
+            items = try await APIClient.shared.socialFeed(source: "following")
+        } catch {
+            // A pull-to-refresh cancels the in-flight request; don't wipe the
+            // feed to an "empty" state on a cancellation — only clear on a real
+            // failure.
+            if !isCancellation(error) { items = [] }
+        }
         loading = false
         if myImage == nil, let id = environment.session.profile?.id {
             myImage = (try? await APIClient.shared.socialProfile(userId: id))?.image

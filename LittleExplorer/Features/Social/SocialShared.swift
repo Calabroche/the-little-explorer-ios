@@ -84,6 +84,15 @@ struct AvatarView: View {
 
 // (ShareSheet lives in LittleExplorer/UI/ShareSheet.swift — reused here.)
 
+/// True when an error is just a cancelled request (pull-to-refresh racing an
+/// in-flight load, or a Task cancellation). Callers use it to avoid surfacing a
+/// spurious empty / error state on refresh.
+func isCancellation(_ error: Error) -> Bool {
+    if error is CancellationError { return true }
+    if let u = error as? URLError, u.code == .cancelled { return true }
+    return false
+}
+
 // ── Formatters ─────────────────────────────────────────────────────────────
 enum SocialFmt {
     static func duration(_ min: Int?) -> String {
@@ -93,6 +102,8 @@ enum SocialFmt {
     }
     static func distance(_ km: Double?) -> String {
         guard let km else { return "—" }
+        // Under 1 km (typical for a swim) metres read far better than "0.8 km".
+        if km < 1 { return "\(Int((km * 1000).rounded())) m" }
         return String(format: "%.1f km", km)
     }
     static func elevation(_ m: Int?) -> String {

@@ -100,7 +100,14 @@ final class ActivityStore {
             invalidateCache()
             state = .loaded
         } catch {
-            state = .failed(error.localizedDescription)
+            // Pull-to-refresh cancels the in-flight request — don't flip to a
+            // "Couldn't load activities" error on a cancellation. Keep the data
+            // we already had (or fall back to idle if we never loaded any).
+            if isCancellation(error) {
+                state = apiActivities.isEmpty && localActivities.isEmpty ? .idle : .loaded
+            } else {
+                state = .failed(error.localizedDescription)
+            }
         }
     }
 

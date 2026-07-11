@@ -58,8 +58,7 @@ struct SocialCardView: View {
     @State private var commentCount: Int
     @State private var visibility: ActivityVisibility
     @State private var showComments = false
-    @State private var shareImage: UIImage?
-    @State private var showShare = false
+    @State private var shareItem: ShareItem?
     @State private var likeBusy = false
 
     init(item: SocialFeedItem,
@@ -116,10 +115,11 @@ struct SocialCardView: View {
         .sheet(isPresented: $showComments) {
             CommentsView(activityId: item.id) { commentCount = $0 }
         }
-        .sheet(isPresented: $showShare) {
-            if let img = shareImage {
-                ShareSheet(items: shareItems(img))
-            }
+        // item-based sheet: only presents once the rendered image exists, so we
+        // never flash an empty black sheet (the isPresented+optional-content
+        // race that forced a quit-and-retry).
+        .sheet(item: $shareItem) { item in
+            ShareSheet(items: item.activityItems)
         }
     }
 
@@ -224,20 +224,23 @@ struct SocialCardView: View {
             let card = StoryCardView(item: item, mapImage: mapImg).frame(width: 405, height: 720)
             let renderer = ImageRenderer(content: card)
             renderer.scale = 3
-            if let img = renderer.uiImage {
-                shareImage = img
-                showShare = true
+            guard let img = renderer.uiImage else { return }
+            var url: URL?
+            if visibility == .public {
+                url = URL(string: "https://the-little-explorer-app.vercel.app/api/share/activity/\(item.id)")
             }
+            shareItem = ShareItem(image: img, link: url)
         }
     }
-    private func shareItems(_ img: UIImage) -> [Any] {
-        var items: [Any] = [img]
-        if visibility == .public,
-           let url = URL(string: "https://the-little-explorer-app.vercel.app/api/share/activity/\(item.id)") {
-            items.append(url)
-        }
-        return items
-    }
+}
+
+/// A rendered share image (+ optional public link), wrapped as Identifiable so
+/// `.sheet(item:)` presents it only once it's ready.
+struct ShareItem: Identifiable {
+    let id = UUID()
+    let image: UIImage
+    let link: URL?
+    var activityItems: [Any] { link.map { [image, $0] } ?? [image] }
 }
 
 /// The story image rendered for Instagram (via ImageRenderer). Fixed 9:16-ish
@@ -266,12 +269,29 @@ struct StoryCardView: View {
                     .frame(maxWidth: .infinity)
                     .clipShape(RoundedRectangle(cornerRadius: 14))
                     .padding(.vertical, 24)
-            } else {
+            } else if item.gps.count >= 2 {
                 TraceShape(points: item.gps)
                     .stroke(AppColors.terra, style: StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round))
-                    .frame(height: 360)
+                    .frame(height: 340)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 24)
+            } else {
+                // No GPS (pool swim, gym…): a sport hero instead of empty space.
+                ZStack {
+                    RoundedRectangle(cornerRadius: 16).fill(AppColors.terra.opacity(0.12))
+                    VStack(spacing: 14) {
+                        Image(systemName: Self.sportSymbol(item.sport))
+                            .font(.system(size: 96, weight: .regular))
+                            .foregroundStyle(AppColors.terra)
+                        Text(SocialFmt.sportLabel(item.sport).uppercased())
+                            .font(.system(size: 15, weight: .heavy))
+                            .tracking(2)
+                            .foregroundStyle(AppColors.inkMid)
+                    }
+                }
+                .frame(height: 340)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 24)
             }
 
             HStack {
@@ -292,6 +312,21 @@ struct StoryCardView: View {
             LinearGradient(colors: [AppColors.cream, AppColors.terraLight],
                            startPoint: .top, endPoint: .bottom)
         )
+    }
+    static func sportSymbol(_ sport: String) -> String {
+        switch sport {
+        case "swim":      return "figure.pool.swim"
+        case "running":   return "figure.run"
+        case "walking":   return "figure.walk"
+        case "hiking":    return "figure.hiking"
+        case "cycling":   return "figure.outdoor.cycle"
+        case "rowing":    return "figure.rower"
+        case "ski":       return "figure.skiing.downhill"
+        case "snowboard": return "figure.snowboarding"
+        case "yoga":      return "figure.mind.and.body"
+        case "workout":   return "figure.strengthtraining.traditional"
+        default:          return "figure.run"
+        }
     }
     private func storyStat(_ label: String, _ value: String) -> some View {
         VStack(alignment: .leading, spacing: 4) {
