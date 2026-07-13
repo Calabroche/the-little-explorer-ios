@@ -174,7 +174,10 @@ struct SocialCardView: View {
             HStack(spacing: 0) {
                 actionButton(liked ? "❤️" : "🤍", likeCount > 0 ? "\(likeCount)" : "Kudos", active: liked) { toggleLike() }
                 actionButton("💬", commentCount > 0 ? "\(commentCount)" : "Commenter") { showComments = true }
-                actionButton("↗", "Partager") { presentShare() }
+                // Only your OWN activities can be shared, never someone else's.
+                if item.isMine {
+                    actionButton("↗", "Partager") { presentShare() }
+                }
             }
         }
         .padding(.top, 6)
@@ -221,7 +224,9 @@ struct SocialCardView: View {
                 g.count >= 2 ? CLLocationCoordinate2D(latitude: g[0], longitude: g[1]) : nil
             }
             let mapImg = await RouteSnapshot.image(coords: coords, size: CGSize(width: 349, height: 340))
-            let card = StoryCardView(item: item, mapImage: mapImg).frame(width: 405, height: 720)
+            // Full record carries fields the feed item doesn't (max incline).
+            let record = try? await APIClient.shared.activity(id: item.id)
+            let card = StoryCardView(item: item, mapImage: mapImg, maxIncline: record?.maxIncline).frame(width: 405, height: 720)
             let renderer = ImageRenderer(content: card)
             renderer.scale = 3
             guard let img = renderer.uiImage else { return }
@@ -248,6 +253,7 @@ struct ShareItem: Identifiable {
 struct StoryCardView: View {
     let item: SocialFeedItem
     var mapImage: UIImage? = nil
+    var maxIncline: Double? = nil
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("The Little Explorer")
@@ -303,6 +309,11 @@ struct StoryCardView: View {
                 storyStat("TEMPS", SocialFmt.duration(item.durationMin))
                 Spacer()
                 storyStat("V. MAX", SocialFmt.speed(item.maxSpeedKmh))
+            }.padding(.top, 20)
+            HStack {
+                storyStat("V. MOY", SocialFmt.speed(item.avgSpeedKmh))
+                Spacer()
+                storyStat("PENTE MAX", maxIncline.map { String(format: "+%.1f %%", $0) } ?? "—")
             }.padding(.top, 20)
             Spacer()
         }

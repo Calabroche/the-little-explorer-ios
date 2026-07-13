@@ -54,6 +54,7 @@ struct SocialFeedView: View {
     @Environment(AppEnvironment.self) private var environment
     @State private var items: [SocialFeedItem] = []
     @State private var loading = true
+    @State private var didLoad = false      // a successful load has happened at least once
     @State private var showSearch = false
     @State private var showWhatsNew = false
     @State private var path = NavigationPath()
@@ -63,9 +64,9 @@ struct SocialFeedView: View {
         NavigationStack(path: $path) {
             ScrollView {
                 LazyVStack(spacing: 8) {
-                    if loading {
+                    if loading && !didLoad {
                         ProgressView().padding(.top, 40)
-                    } else if items.isEmpty {
+                    } else if items.isEmpty && didLoad {
                         emptyState
                     } else {
                         ForEach(items) { item in
@@ -107,8 +108,8 @@ struct SocialFeedView: View {
             }
             .sheet(isPresented: $showSearch) { FriendSearchView() }
             .sheet(isPresented: $showWhatsNew) { WhatsNewView(initialRunning: environment.selectedSport == .running) }
-            .task { await load() }
-            .refreshable { await load() }
+            .task { await load(initial: true) }
+            .refreshable { await load(initial: false) }
         }
     }
 
@@ -122,15 +123,25 @@ struct SocialFeedView: View {
         .padding(.top, 60).padding(.horizontal, 30)
     }
 
-    @MainActor private func load() async {
-        loading = true
+    @MainActor private func load(initial: Bool) async {
+        // Only show the full-screen spinner on the very first load — a refresh
+        // keeps the existing cards on screen (SwiftUI shows its own pull
+        // spinner) so the feed never blanks out.
+        if initial && !didLoad { loading = true }
         do {
             items = try await APIClient.shared.socialFeed(source: "following")
+            didLoad = true          // we now KNOW the feed's real state
         } catch {
-            // A pull-to-refresh cancels the in-flight request; don't wipe the
-            // feed to an "empty" state on a cancellation — only clear on a real
-            // failure.
-            if !isCancellation(error) { items = [] }
+            // A cancelled request (refresh racing an in-flight load) must never
+            // wipe the feed or flip us to the empty state. Retry once on a
+            // genuine failure of the very first load so a transient error
+            // doesn't strand the user on "ton fil est vide".
+            if !isCancellation(error) && !didLoad && initial {
+                try? await Task.sleep(nanoseconds: 600_000_000)
+                if let retry = try? await APIClient.shared.socialFeed(source: "following") {
+                    items = retry; didLoad = true
+                }
+            }
         }
         loading = false
         if myImage == nil, let id = environment.session.profile?.id {
