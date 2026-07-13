@@ -46,6 +46,45 @@ enum RouteSnapshot {
     }
 }
 
+/// Swipeable media for a feed card: the map/trace first, then each photo, with
+/// page dots (Strava-style). A tap anywhere opens the activity; horizontal
+/// swipe pages through the media.
+struct FeedMediaCarousel: View {
+    let gps: [[Double]]
+    let photos: [String]
+    var onTap: () -> Void
+    @State private var index = 0
+
+    private var hasMap: Bool { gps.count >= 2 }
+    private var slideCount: Int { (hasMap ? 1 : 0) + photos.count }
+
+    var body: some View {
+        if slideCount == 0 {
+            EmptyView()
+        } else {
+            TabView(selection: $index) {
+                if hasMap {
+                    RouteMiniMap(gps: gps.map { Coordinate(lat: $0[0], lng: $0[1]) }, speedKmh: nil, fallbackColor: AppColors.terra, height: 260)
+                        .tag(0)
+                }
+                ForEach(Array(photos.enumerated()), id: \.offset) { i, url in
+                    AsyncImage(url: URL(string: url)) { img in
+                        img.resizable().scaledToFill()
+                    } placeholder: { AppColors.creamBorder }
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 260)
+                    .clipped()
+                    .tag(hasMap ? i + 1 : i)
+                }
+            }
+            .frame(height: slideCount > 1 ? 284 : 260)
+            .tabViewStyle(.page(indexDisplayMode: slideCount > 1 ? .always : .never))
+            .contentShape(Rectangle())
+            .onTapGesture { onTap() }
+        }
+    }
+}
+
 /// One feed / profile card: author header, GPS trace, stats, and the
 /// like / comment / share actions. Owner cards also get a visibility menu.
 struct SocialCardView: View {
@@ -84,37 +123,26 @@ struct SocialCardView: View {
             // stats opens the detail. A Button captures taps reliably even over
             // the MapKit map (an .onTapGesture doesn't). The map is full-bleed
             // (edge to edge, Strava-style); text/stats keep side padding.
-            Button {
-                onOpenActivity(item.id)
-            } label: {
-                VStack(alignment: .leading, spacing: 10) {
-                    if let title = item.title, !title.isEmpty {
-                        Text(title)
-                            .font(.system(size: 21, weight: .heavy, design: .serif))
-                            .foregroundStyle(AppColors.ink)
-                            .padding(.horizontal, 16)
-                    }
-                    if item.gps.count >= 2 {
-                        RouteMiniMap(
-                            gps: item.gps.map { Coordinate(lat: $0[0], lng: $0[1]) },
-                            speedKmh: nil,
-                            fallbackColor: AppColors.terra,
-                            height: 240,
-                        )
-                    }
-                    if let photo = item.photo, let url = URL(string: photo) {
-                        AsyncImage(url: url) { img in
-                            img.resizable().scaledToFill()
-                        } placeholder: { AppColors.creamBorder.frame(height: 240) }
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 260)
-                        .clipped()
-                    }
-                    stats
+            if let title = item.title, !title.isEmpty {
+                Button { onOpenActivity(item.id) } label: {
+                    Text(title)
+                        .font(.system(size: 21, weight: .heavy, design: .serif))
+                        .foregroundStyle(AppColors.ink)
                         .padding(.horizontal, 16)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .contentShape(Rectangle())
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+                .buttonStyle(.plain)
+            }
+            // Swipeable carousel: map/trace first, then the photos (Strava-style).
+            // Kept OUTSIDE the tap button so the page-swipe works; a tap on it
+            // still opens the detail.
+            FeedMediaCarousel(gps: item.gps, photos: item.photos) { onOpenActivity(item.id) }
+            Button { onOpenActivity(item.id) } label: {
+                stats
+                    .padding(.horizontal, 16)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             actions

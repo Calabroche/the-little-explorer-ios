@@ -144,9 +144,10 @@ struct ActivityDetailView: View {
             VStack(alignment: .leading, spacing: 14) {
                 header
                 topStatsCard
-                // Photos (server-side rides only; local negative-id rides have none).
+                // Photos — display only here; add/remove happens in the edit
+                // sheet (the pencil). Server-side rides only.
                 if !isLocalRide {
-                    ActivityMediaSection(activityId: activity.id, canEdit: canDelete)
+                    ActivityMediaSection(activityId: activity.id, canEdit: false)
                 }
                 if activity.np != nil { ftpCard }
                 if let gap = gradeAdjustedPace { gapCard(gap) }
@@ -1414,6 +1415,11 @@ struct EditActivitySheet: View {
                     Picker("Sport", selection: $sport) {
                         ForEach(Self.sports, id: \.0) { Text($0.1).tag($0.0) }
                     }
+                }
+                Section("Photos") {
+                    ActivityMediaSection(activityId: activityId, canEdit: true)
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
                 }
                 if let error { Text(error).foregroundStyle(.red).font(.caption) }
             }
