@@ -44,6 +44,7 @@ struct ProfileView: View {
                 switch route {
                 case .settings:         SettingsView()
                 case .admin:            AdminView()
+                case .perf:             PerfDashboardView()
                 case .diagnostics:      DiagnosticsView()
                 case .bluetoothSensors: BluetoothSensorsView()
                 case .bikeEquipment:    BikeEquipmentView()
@@ -120,6 +121,10 @@ struct ProfileView: View {
                 if AdminAllowlist.contains(email: profile?.email) {
                     NavigationLink(value: ProfileRoute.admin) {
                         actionRow(symbol: "shield.lefthalf.filled", text: "Admin", chevron: true, dashed: true)
+                    }
+                    .buttonStyle(.plain)
+                    NavigationLink(value: ProfileRoute.perf) {
+                        actionRow(symbol: "speedometer", text: "Performance", chevron: true, dashed: true)
                     }
                     .buttonStyle(.plain)
                 }
@@ -437,7 +442,7 @@ struct ProfileView: View {
 }
 
 enum ProfileRoute: Hashable {
-    case settings, admin, diagnostics, bluetoothSensors, bikeEquipment, guide
+    case settings, admin, perf, diagnostics, bluetoothSensors, bikeEquipment, guide
 }
 
 // MARK: - Theme segmented control

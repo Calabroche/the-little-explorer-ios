@@ -804,12 +804,17 @@ actor APIClient {
         let method = req.httpMethod ?? "?"
         let data: Data
         let response: URLResponse
+        let start = Date()
         do {
             (data, response) = try await session.data(for: req)
         } catch {
             Log.api.error("\(method, privacy: .public) \(path, privacy: .public) — transport: \(error.localizedDescription, privacy: .public)")
             throw APIError.transport(error)
         }
+        // Real-user timing → /admin/perf (fire-and-forget, off the hot path).
+        let ms = Date().timeIntervalSince(start) * 1000
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        Task { await PerfTracker.shared.record(PerfSample(label: PerfTracker.normalize(path), ms: ms, status: status)) }
         if let http = response as? HTTPURLResponse {
             if http.statusCode == 401 {
                 Log.auth.error("\(method, privacy: .public) \(path, privacy: .public) — 401 unauthorized")
@@ -891,9 +896,35 @@ extension APIClient {
         let _: VisResp = try await patchJSON("/api/activities/\(activityId)", jsonObject: ["visibility": visibility.rawValue])
     }
 
+    /// PATCH /api/activities/<id> — edit title + sport of your own ride.
+    func updateActivity(id: Int, title: String, sport: String) async throws {
+        struct Resp: Decodable { let ok: Bool? }
+        let _: Resp = try await patchJSON("/api/activities/\(id)", jsonObject: ["title": title, "sport": sport])
+    }
+
     /// DELETE /api/activities/<id> — permanently remove one of your own rides.
     func deleteActivity(_ id: Int) async throws {
         try await emptyPost(method: "DELETE", path: "/api/activities/\(id)")
+    }
+
+    /// POST /api/perf — ship a batch of iOS timing samples (fire-and-forget).
+    func sendPerfSamples(_ samples: [PerfSample]) async {
+        guard !samples.isEmpty else { return }
+        let payload: [String: Any] = ["samples": samples.map {
+            ["kind": "api", "label": $0.label, "ms": $0.ms, "status": $0.status]
+        }]
+        let url = baseURL.appendingPathComponent("/api/perf")
+        var req = URLRequest(url: url)
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token = authToken { req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
+        _ = try? await session.data(for: req)
+    }
+
+    /// GET /api/admin/perf — the performance rollup (admin only).
+    func adminPerf(window: String) async throws -> AdminPerf {
+        try await get("/api/admin/perf", query: ["window": window])
     }
 
     /// GET /api/activities?activityId=X — ONE fully-computed activity (map,

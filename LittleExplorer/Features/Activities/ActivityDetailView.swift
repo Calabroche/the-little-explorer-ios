@@ -71,6 +71,7 @@ struct ActivityDetailView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.dismiss) private var dismiss
     @State private var showDeleteConfirm: Bool = false
+    @State private var showEdit: Bool = false
     /// Domain ceiling for every chart's `chartXScale`. Swift Charts
     /// crashes (FATAL: closed range with 0 width) when the domain is
     /// 0...0, and renders badly when it's 0...0.01. Floor at 0.5 km so
@@ -231,6 +232,22 @@ struct ActivityDetailView: View {
                         Image(systemName: "trash")
                             .foregroundStyle(.red)
                     }
+                }
+                // Edit (title + sport) — only for rides that live on the server.
+                if !isLocalRide {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button { showEdit = true } label: {
+                            Image(systemName: "pencil").foregroundStyle(AppColors.terra)
+                        }
+                    }
+                }
+            }
+        }
+        .sheet(isPresented: $showEdit) {
+            EditActivitySheet(activityId: activity.id, initialTitle: activity.title, initialSport: activity.type) {
+                Task {
+                    await environment.activityStore.load(user: environment.currentUser, force: true)
+                    dismiss()
                 }
             }
         }
@@ -1352,6 +1369,71 @@ private struct PowerSummaryCard: View {
                     .foregroundStyle(AppColors.ink)
                     .monospacedDigit()
                 Text(unit).font(.system(size: 10)).foregroundStyle(AppColors.inkLight)
+            }
+        }
+    }
+}
+
+/// Edit sheet for one of your own activities: title + sport. Saves via
+/// PATCH /api/activities/<id>, then calls onSaved (reload + pop the detail).
+struct EditActivitySheet: View {
+    let activityId: Int
+    var onSaved: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var title: String
+    @State private var sport: String
+    @State private var saving = false
+    @State private var error: String?
+
+    init(activityId: Int, initialTitle: String, initialSport: String, onSaved: @escaping () -> Void) {
+        self.activityId = activityId
+        self.onSaved = onSaved
+        _title = State(initialValue: initialTitle)
+        _sport = State(initialValue: initialSport)
+    }
+
+    private static let sports: [(String, String)] = [
+        ("cycling", "Vélo"), ("running", "Course à pied"), ("walking", "Marche"),
+        ("hiking", "Randonnée"), ("swim", "Natation"), ("rowing", "Aviron"),
+        ("ski", "Ski"), ("snowboard", "Snowboard"), ("yoga", "Yoga"),
+        ("workout", "Renforcement"), ("cardio", "Cardio"), ("climbing", "Escalade"),
+        ("kayak", "Kayak"), ("paddle", "Paddle"), ("surf", "Surf"), ("other", "Autre"),
+    ]
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("Titre") {
+                    TextField("Titre de la sortie", text: $title)
+                }
+                Section("Sport") {
+                    Picker("Sport", selection: $sport) {
+                        ForEach(Self.sports, id: \.0) { Text($0.1).tag($0.0) }
+                    }
+                }
+                if let error { Text(error).foregroundStyle(.red).font(.caption) }
+            }
+            .navigationTitle("Modifier la sortie")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Annuler") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(saving ? "…" : "Enregistrer") { save() }
+                        .disabled(saving || title.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+        }
+    }
+
+    private func save() {
+        saving = true; error = nil
+        let t = title.trimmingCharacters(in: .whitespaces)
+        Task {
+            do {
+                try await APIClient.shared.updateActivity(id: activityId, title: t, sport: sport)
+                await MainActor.run { dismiss(); onSaved() }
+            } catch {
+                await MainActor.run { self.error = "Échec de l'enregistrement. Réessaie."; saving = false }
             }
         }
     }
