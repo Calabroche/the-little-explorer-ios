@@ -60,6 +60,8 @@ struct SocialCardView: View {
     @State private var showComments = false
     @State private var shareItem: ShareItem?
     @State private var likeBusy = false
+    @State private var showShareOptions = false
+    @State private var shareMedia: [ActivityMedia] = []
 
     init(item: SocialFeedItem,
          onOpenProfile: @escaping (String) -> Void = { _ in },
@@ -100,6 +102,14 @@ struct SocialCardView: View {
                             height: 240,
                         )
                     }
+                    if let photo = item.photo, let url = URL(string: photo) {
+                        AsyncImage(url: url) { img in
+                            img.resizable().scaledToFill()
+                        } placeholder: { AppColors.creamBorder.frame(height: 240) }
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 260)
+                        .clipped()
+                    }
                     stats
                         .padding(.horizontal, 16)
                 }
@@ -120,6 +130,14 @@ struct SocialCardView: View {
         // race that forced a quit-and-retry).
         .sheet(item: $shareItem) { item in
             ShareSheet(items: item.activityItems)
+        }
+        // Step 3 composer: choose the story background (map or one of the photos).
+        .confirmationDialog("Fond du partage", isPresented: $showShareOptions, titleVisibility: .visible) {
+            Button("Carte / tracé") { Task { await renderAndShare(background: .map) } }
+            ForEach(Array(shareMedia.enumerated()), id: \.offset) { idx, m in
+                Button("Photo \(idx + 1)") { Task { await renderAndShare(background: .photo(m.url)) } }
+            }
+            Button("Annuler", role: .cancel) {}
         }
     }
 
@@ -218,24 +236,50 @@ struct SocialCardView: View {
             catch { await MainActor.run { visibility = prev } }
         }
     }
+    enum ShareBackground { case map; case photo(String) }
+
     @MainActor private func presentShare() {
         Task {
+            // If the ride has photos, let the user pick the background; otherwise
+            // go straight to the map/trace story.
+            let media = (try? await APIClient.shared.activityMedia(activityId: item.id)) ?? []
+            if media.isEmpty {
+                await renderAndShare(background: .map)
+            } else {
+                shareMedia = media
+                showShareOptions = true
+            }
+        }
+    }
+
+    @MainActor private func renderAndShare(background: ShareBackground) async {
+        let record = try? await APIClient.shared.activity(id: item.id)
+        let card: StoryCardView
+        switch background {
+        case .map:
             let coords = item.gps.compactMap { g -> CLLocationCoordinate2D? in
                 g.count >= 2 ? CLLocationCoordinate2D(latitude: g[0], longitude: g[1]) : nil
             }
             let mapImg = await RouteSnapshot.image(coords: coords, size: CGSize(width: 349, height: 340))
-            // Full record carries fields the feed item doesn't (max incline).
-            let record = try? await APIClient.shared.activity(id: item.id)
-            let card = StoryCardView(item: item, mapImage: mapImg, maxIncline: record?.maxIncline).frame(width: 405, height: 720)
-            let renderer = ImageRenderer(content: card)
-            renderer.scale = 3
-            guard let img = renderer.uiImage else { return }
-            var url: URL?
-            if visibility == .public {
-                url = URL(string: "https://the-little-explorer-app.vercel.app/api/share/activity/\(item.id)")
-            }
-            shareItem = ShareItem(image: img, link: url)
+            card = StoryCardView(item: item, mapImage: mapImg, maxIncline: record?.maxIncline)
+        case .photo(let urlStr):
+            let photo = await Self.downloadImage(urlStr)
+            card = StoryCardView(item: item, maxIncline: record?.maxIncline, photoBackground: photo)
         }
+        let renderer = ImageRenderer(content: card.frame(width: 405, height: 720))
+        renderer.scale = 3
+        guard let img = renderer.uiImage else { return }
+        var url: URL?
+        if visibility == .public {
+            url = URL(string: "https://the-little-explorer-app.vercel.app/api/share/activity/\(item.id)")
+        }
+        shareItem = ShareItem(image: img, link: url)
+    }
+
+    static func downloadImage(_ urlStr: String) async -> UIImage? {
+        guard let url = URL(string: urlStr),
+              let (data, _) = try? await URLSession.shared.data(from: url) else { return nil }
+        return UIImage(data: data)
     }
 }
 
@@ -254,7 +298,44 @@ struct StoryCardView: View {
     let item: SocialFeedItem
     var mapImage: UIImage? = nil
     var maxIncline: Double? = nil
+    var photoBackground: UIImage? = nil
+
     var body: some View {
+        if let photoBackground { photoStory(photoBackground) } else { standardStory }
+    }
+
+    // Full-bleed photo background + stats overlaid at the bottom.
+    private func photoStory(_ bg: UIImage) -> some View {
+        ZStack(alignment: .bottomLeading) {
+            Image(uiImage: bg).resizable().scaledToFill()
+            LinearGradient(colors: [.clear, .clear, .black.opacity(0.8)], startPoint: .top, endPoint: .bottom)
+            VStack(alignment: .leading, spacing: 8) {
+                Text("The Little Explorer").font(.system(size: 15, weight: .heavy, design: .serif)).foregroundStyle(.white.opacity(0.92))
+                Text(item.title ?? "Sortie").font(.system(size: 30, weight: .heavy, design: .serif)).foregroundStyle(.white).lineLimit(2)
+                HStack(spacing: 22) {
+                    overlayStat("DISTANCE", SocialFmt.distance(item.distanceKm))
+                    overlayStat("DÉNIVELÉ", SocialFmt.elevation(item.elevationM))
+                    overlayStat("TEMPS", SocialFmt.duration(item.durationMin))
+                }
+                HStack(spacing: 22) {
+                    overlayStat("V. MOY", SocialFmt.speed(item.avgSpeedKmh))
+                    overlayStat("V. MAX", SocialFmt.speed(item.maxSpeedKmh))
+                    if let mi = maxIncline { overlayStat("PENTE MAX", String(format: "+%.1f %%", mi)) }
+                }
+            }
+            .padding(26)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .clipped()
+    }
+    private func overlayStat(_ label: String, _ value: String) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(label).font(.system(size: 11, weight: .semibold)).foregroundStyle(.white.opacity(0.8))
+            Text(value).font(.system(size: 22, weight: .heavy, design: .serif)).foregroundStyle(.white)
+        }
+    }
+
+    private var standardStory: some View {
         VStack(alignment: .leading, spacing: 0) {
             Text("The Little Explorer")
                 .font(.system(size: 18, weight: .heavy, design: .serif))

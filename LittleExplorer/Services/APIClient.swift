@@ -927,6 +927,18 @@ extension APIClient {
         try await get("/api/admin/perf", query: ["window": window])
     }
 
+    // ── Activity media (photos) ──────────────────────────────────────────────
+    func activityMedia(activityId: Int) async throws -> [ActivityMedia] {
+        try await get("/api/activities/\(activityId)/media")
+    }
+    func addActivityPhoto(activityId: Int, imageDataUrl: String) async throws -> ActivityMedia {
+        struct Body: Encodable { let image: String }
+        return try await post("/api/activities/\(activityId)/media", body: Body(image: imageDataUrl))
+    }
+    func deleteActivityMedia(activityId: Int, mediaId: String) async throws {
+        try await sendJSON(method: "DELETE", path: "/api/activities/\(activityId)/media", json: ["mediaId": mediaId])
+    }
+
     /// GET /api/activities?activityId=X — ONE fully-computed activity (map,
     /// power, FTP, zones, montées…), which may belong to another user. The
     /// server computes it with the OWNER's profile and enforces visibility, so

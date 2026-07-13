@@ -144,6 +144,10 @@ struct ActivityDetailView: View {
             VStack(alignment: .leading, spacing: 14) {
                 header
                 topStatsCard
+                // Photos (server-side rides only; local negative-id rides have none).
+                if !isLocalRide {
+                    ActivityMediaSection(activityId: activity.id, canEdit: canDelete)
+                }
                 if activity.np != nil { ftpCard }
                 if let gap = gradeAdjustedPace { gapCard(gap) }
 

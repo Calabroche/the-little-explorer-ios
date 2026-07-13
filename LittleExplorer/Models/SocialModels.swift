@@ -48,13 +48,14 @@ struct SocialFeedItem: Codable, Sendable, Identifiable {
     let avgSpeedKmh: Double?
     let maxSpeedKmh: Double?
     let gps: [[Double]]
+    let photo: String?
     let visibility: ActivityVisibility
     let likeCount: Int
     let commentCount: Int
     let likedByMe: Bool
 
     enum CodingKeys: String, CodingKey {
-        case id, author, sport, title, date, gps, visibility
+        case id, author, sport, title, date, gps, photo, visibility
         case isMine        = "is_mine"
         case distanceKm    = "distance_km"
         case elevationM    = "elevation_m"
@@ -81,6 +82,7 @@ struct SocialFeedItem: Codable, Sendable, Identifiable {
         avgSpeedKmh  = try? c.decode(Double.self, forKey: .avgSpeedKmh)
         maxSpeedKmh  = try? c.decode(Double.self, forKey: .maxSpeedKmh)
         gps          = (try? c.decode([[Double]].self, forKey: .gps)) ?? []
+        photo        = try? c.decode(String.self, forKey: .photo)
         visibility   = (try? c.decode(ActivityVisibility.self, forKey: .visibility)) ?? .followers
         likeCount    = (try? c.decode(Int.self, forKey: .likeCount)) ?? 0
         commentCount = (try? c.decode(Int.self, forKey: .commentCount)) ?? 0
@@ -136,4 +138,11 @@ struct SocialUser: Codable, Sendable, Identifiable {
         case id, name, image
         case isFollowing = "is_following"
     }
+}
+
+/// A photo (later video) attached to an activity.
+struct ActivityMedia: Codable, Sendable, Identifiable {
+    let id: String
+    let url: String
+    let kind: String
 }
