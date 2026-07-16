@@ -62,6 +62,12 @@ struct ItineraryView: View {
                     }
                     .padding(.horizontal, 16)
 
+                    StepExtrasView { waypoint in
+                        planner.add(waypoint)
+                        recenterMap()
+                    }
+                    .padding(.horizontal, 16)
+
                     mapPreview(planner: planner)
                         .frame(height: 300)
                         .clipShape(RoundedRectangle(cornerRadius: 10))

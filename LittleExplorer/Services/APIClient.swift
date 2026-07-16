@@ -939,6 +939,23 @@ extension APIClient {
         try await sendJSON(method: "DELETE", path: "/api/activities/\(activityId)/media", json: ["mediaId": mediaId])
     }
 
+    // ── Favorite places ──────────────────────────────────────────────────────
+    func favoritePlaces() async throws -> [FavoritePlace] {
+        try await get("/api/me/places")
+    }
+    func addFavoritePlace(_ w: Waypoint) async throws -> FavoritePlace {
+        struct Body: Encodable {
+            let name: String; let label: String?; let code: String?; let postal: String?
+            let city: String?; let kind: String?; let lat: Double; let lng: Double
+        }
+        return try await post("/api/me/places", body: Body(
+            name: w.name, label: w.label, code: w.code, postal: w.postal,
+            city: w.city, kind: w.kind?.rawValue, lat: w.lat, lng: w.lng))
+    }
+    func deleteFavoritePlace(id: String) async throws {
+        try await sendJSON(method: "DELETE", path: "/api/me/places", json: ["id": id])
+    }
+
     /// GET /api/activities?activityId=X — ONE fully-computed activity (map,
     /// power, FTP, zones, montées…), which may belong to another user. The
     /// server computes it with the OWNER's profile and enforces visibility, so

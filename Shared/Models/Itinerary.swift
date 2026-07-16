@@ -156,3 +156,21 @@ extension CommuneResult {
         )
     }
 }
+
+/// A saved favorite place (itinerary start point), synced via /api/me/places.
+struct FavoritePlace: Codable, Identifiable, Hashable {
+    let id: String
+    let name: String
+    var label: String?
+    var code: String?
+    var postal: String?
+    var city: String?
+    var kind: String?
+    let lat: Double
+    let lng: Double
+
+    func toWaypoint() -> Waypoint {
+        Waypoint(name: name, code: code ?? id, postal: postal, lat: lat, lng: lng,
+                 label: label, city: city, kind: kind.flatMap(Waypoint.PlaceKind.init(rawValue:)))
+    }
+}
