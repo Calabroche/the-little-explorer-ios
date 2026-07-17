@@ -1,3 +1,4 @@
+import ImageIO
 import PhotosUI
 import SwiftUI
 
@@ -79,10 +80,25 @@ struct ActivityMediaSection: View {
               let dataUrl = Self.jpegDataUrl(image, maxDim: 1280) else {
             error = "Image illisible."; return
         }
+        // Geotag from the original EXIF → lets the app pin the photo on the map.
+        let coord = Self.gpsFromImageData(data)
         do {
-            let m = try await APIClient.shared.addActivityPhoto(activityId: activityId, imageDataUrl: dataUrl)
+            let m = try await APIClient.shared.addActivityPhoto(activityId: activityId, imageDataUrl: dataUrl, lat: coord?.lat, lng: coord?.lng)
             media.append(m)
         } catch { self.error = "Échec de l'ajout." }
+    }
+
+    /// Extract GPS lat/lng from the image's EXIF (before the resize strips it).
+    static func gpsFromImageData(_ data: Data) -> (lat: Double, lng: Double)? {
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil),
+              let props = CGImageSourceCopyPropertiesAtIndex(src, 0, nil) as? [CFString: Any],
+              let gps = props[kCGImagePropertyGPSDictionary] as? [CFString: Any],
+              var lat = gps[kCGImagePropertyGPSLatitude] as? Double,
+              var lng = gps[kCGImagePropertyGPSLongitude] as? Double else { return nil }
+        if (gps[kCGImagePropertyGPSLatitudeRef] as? String) == "S" { lat = -lat }
+        if (gps[kCGImagePropertyGPSLongitudeRef] as? String) == "W" { lng = -lng }
+        guard abs(lat) <= 90, abs(lng) <= 180 else { return nil }
+        return (lat, lng)
     }
 
     private func remove(_ m: ActivityMedia) {

@@ -18,15 +18,18 @@ struct RouteAnalysisMap: View {
     /// a climb in the Climbs card — the matching stretch lights up
     /// here so the eye can locate it on the map.
     var highlightSegment: (startIdx: Int, endIdx: Int)? = nil
+    /// Geolocated photos pinned where they were taken.
+    var photoPins: [ActivityMedia] = []
 
     @State private var cameraPosition: MapCameraPosition
     @State private var hovered: Hovered?
     @State private var clearTask: Task<Void, Never>?
 
-    init(activity: RideRecord, height: CGFloat = 380, highlightSegment: (startIdx: Int, endIdx: Int)? = nil) {
+    init(activity: RideRecord, height: CGFloat = 380, highlightSegment: (startIdx: Int, endIdx: Int)? = nil, photoPins: [ActivityMedia] = []) {
         self.activity = activity
         self.height = height
         self.highlightSegment = highlightSegment
+        self.photoPins = photoPins
         let positions = activity.gps
         let region: MKCoordinateRegion = {
             guard !positions.isEmpty else {
@@ -104,6 +107,21 @@ struct RouteAnalysisMap: View {
                         .stroke(AppColors.terra.opacity(0.35), style: StrokeStyle(lineWidth: 14, lineCap: .round))
                     MapPolyline(coordinates: coords)
                         .stroke(AppColors.terra, style: StrokeStyle(lineWidth: 7, lineCap: .round))
+                }
+            }
+
+            // Geolocated photos, pinned where they were taken.
+            ForEach(photoPins) { m in
+                if let lat = m.lat, let lng = m.lng {
+                    Annotation("", coordinate: CLLocationCoordinate2D(latitude: lat, longitude: lng)) {
+                        AsyncImage(url: URL(string: m.url)) { img in
+                            img.resizable().scaledToFill()
+                        } placeholder: { AppColors.terra }
+                        .frame(width: 34, height: 34)
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(.white, lineWidth: 2))
+                        .shadow(radius: 2)
+                    }
                 }
             }
 

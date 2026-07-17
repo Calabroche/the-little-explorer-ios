@@ -931,9 +931,9 @@ extension APIClient {
     func activityMedia(activityId: Int) async throws -> [ActivityMedia] {
         try await get("/api/activities/\(activityId)/media")
     }
-    func addActivityPhoto(activityId: Int, imageDataUrl: String) async throws -> ActivityMedia {
-        struct Body: Encodable { let image: String }
-        return try await post("/api/activities/\(activityId)/media", body: Body(image: imageDataUrl))
+    func addActivityPhoto(activityId: Int, imageDataUrl: String, lat: Double?, lng: Double?) async throws -> ActivityMedia {
+        struct Body: Encodable { let image: String; let lat: Double?; let lng: Double? }
+        return try await post("/api/activities/\(activityId)/media", body: Body(image: imageDataUrl, lat: lat, lng: lng))
     }
     func deleteActivityMedia(activityId: Int, mediaId: String) async throws {
         try await sendJSON(method: "DELETE", path: "/api/activities/\(activityId)/media", json: ["mediaId": mediaId])

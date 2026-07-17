@@ -145,4 +145,6 @@ struct ActivityMedia: Codable, Sendable, Identifiable {
     let id: String
     let url: String
     let kind: String
+    var lat: Double?
+    var lng: Double?
 }

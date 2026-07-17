@@ -72,6 +72,7 @@ struct ActivityDetailView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showDeleteConfirm: Bool = false
     @State private var showEdit: Bool = false
+    @State private var mediaPins: [ActivityMedia] = []
     /// Domain ceiling for every chart's `chartXScale`. Swift Charts
     /// crashes (FATAL: closed range with 0 width) when the domain is
     /// 0...0, and renders badly when it's 0...0.01. Floor at 0.5 km so
@@ -209,6 +210,7 @@ struct ActivityDetailView: View {
                                 let c = detectedClimbs[idx]
                                 return (startIdx: c.startIndex, endIdx: c.endIndex)
                             },
+                            photoPins: mediaPins.filter { $0.lat != nil && $0.lng != nil },
                         )
                     }
                 }
@@ -257,6 +259,10 @@ struct ActivityDetailView: View {
             }
         }
         .toolbarTitleDisplayMode(.inline)
+        .task {
+            // Geolocated photos to pin on the map (server rides only).
+            if !isLocalRide { mediaPins = (try? await APIClient.shared.activityMedia(activityId: activity.id)) ?? [] }
+        }
         .alert("Supprimer cette sortie ?", isPresented: $showDeleteConfirm) {
             Button("Annuler", role: .cancel) {}
             Button("Supprimer", role: .destructive) {
