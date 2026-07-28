@@ -838,29 +838,46 @@ struct ItineraryView: View {
     @ViewBuilder
     private func librarySheet(planner: PlannerState) -> some View {
         NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("\(library.items.count) itinéraire\(library.items.count > 1 ? "s" : "") enregistré\(library.items.count > 1 ? "s" : "")")
-                        .font(.system(size: 12).weight(.semibold))
-                        .foregroundStyle(AppColors.inkLight)
-                    if library.items.isEmpty {
-                        VStack(spacing: 6) {
-                            Image(systemName: "map").font(.system(size: 20)).foregroundStyle(AppColors.inkLight)
-                            Text("Aucun itinéraire enregistré.").font(.system(size: 13)).foregroundStyle(AppColors.inkLight)
-                        }
-                        .frame(maxWidth: .infinity).padding(.vertical, 40)
-                    } else {
-                        ForEach(library.items) { itinerary in
-                            libraryRow(itinerary, planner: planner)
+            Group {
+                if library.items.isEmpty {
+                    VStack(spacing: 6) {
+                        Image(systemName: "map").font(.system(size: 20)).foregroundStyle(AppColors.inkLight)
+                        Text("Aucun itinéraire enregistré.").font(.system(size: 13)).foregroundStyle(AppColors.inkLight)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    // A List (not a ScrollView) so `.onMove` gives us native
+                    // drag-to-reorder. "Modifier" (EditButton) reveals the grips;
+                    // the new order persists to the backend via library.move.
+                    List {
+                        Section {
+                            ForEach(library.items) { itinerary in
+                                libraryRow(itinerary, planner: planner)
+                                    .listRowInsets(EdgeInsets(top: 6, leading: 12, bottom: 6, trailing: 12))
+                                    .listRowSeparator(.hidden)
+                                    .listRowBackground(AppColors.cream)
+                            }
+                            .onMove { source, destination in
+                                library.move(from: source, to: destination, user: environment.currentUser)
+                            }
+                        } header: {
+                            Text("\(library.items.count) itinéraire\(library.items.count > 1 ? "s" : "") · glisse pour réordonner")
+                                .font(.system(size: 12).weight(.semibold))
+                                .foregroundStyle(AppColors.inkLight)
+                                .textCase(nil)
                         }
                     }
+                    .listStyle(.plain)
+                    .scrollContentBackground(.hidden)
                 }
-                .padding(16)
             }
             .background(AppColors.cream)
             .navigationTitle("Itinéraires enregistrés")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .topBarLeading) {
+                    if !library.items.isEmpty { EditButton() }
+                }
                 ToolbarItem(placement: .topBarTrailing) {
                     Button("Fermer") { showLibrarySheet = false }
                 }

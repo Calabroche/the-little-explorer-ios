@@ -96,6 +96,24 @@ final class ItineraryStore {
         persist(user: user)
     }
 
+    /// Reorder the library from a SwiftUI `.onMove`. Applies the move to the
+    /// local array immediately, persists, and pushes the new id order to the
+    /// backend so it sticks across devices (web + Watch).
+    func move(from source: IndexSet, to destination: Int, user: AppUser) {
+        load(user: user)
+        items.move(fromOffsets: source, toOffset: destination)
+        persist(user: user)
+        guard let api else { return }
+        let order = items.map { $0.id }
+        Task { @MainActor [weak self] in
+            do {
+                try await api.reorderItineraries(order: order)
+            } catch {
+                self?.logger.error("Reorder remote failed: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
     private func persist(user: AppUser) {
         guard let data = try? encoder.encode(items) else { return }
         defaults.set(data, forKey: key(for: user))

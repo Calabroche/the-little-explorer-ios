@@ -267,6 +267,29 @@ actor APIClient {
         }
     }
 
+    /// PATCH /api/itineraries — persist a new top-to-bottom order for the
+    /// saved-routes library (drag-and-drop / .onMove). `order` is the full
+    /// list of ids in the desired order; the server rewrites each row's
+    /// `position` as its index.
+    func reorderItineraries(order: [String]) async throws {
+        let url = baseURL.appendingPathComponent("/api/itineraries")
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token = authToken {
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        }
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["order": order])
+        let (data, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse {
+            if http.statusCode == 204 || (200..<300).contains(http.statusCode) { return }
+            if http.statusCode == 401 { throw APIError.unauthorized }
+            let preview = String(data: data.prefix(200), encoding: .utf8) ?? ""
+            Log.api.error("PATCH /api/itineraries \(http.statusCode) · \(preview, privacy: .public)")
+            throw APIError.http(http.statusCode)
+        }
+    }
+
     // MARK: - HealthKit ingestion (Strava-independent)
 
     /// POST /api/activities/ingest — push a workout read from Apple Health
