@@ -185,32 +185,47 @@ final class ItineraryStore {
                 }
             }
 
+            // Remember the local (drag) order so we can preserve it for rows
+            // the server hasn't assigned a position yet — e.g. a reorder whose
+            // upload hasn't landed before this sync. Without it, sync would
+            // clobber a just-dragged order with the server's date fallback.
+            let localIndex = Dictionary(uniqueKeysWithValues: items.enumerated().map { ($0.element.id, $0.offset) })
+
             // Update names/distances from the server summaries — but
             // only when we already have a full local copy. Server-only
             // entries get fetched lazily by the UI when the user opens
             // them, so we don't blow bandwidth fetching every payload
             // up front.
-            var merged: [Itinerary] = []
+            var merged: [(it: Itinerary, pos: Int?, li: Int)] = []
             for summary in summaries {
+                let li = localIndex[summary.id] ?? Int.max
                 if let local = items.first(where: { $0.id == summary.id }) {
                     // Keep the local payload, refresh metadata.
                     var updated = local
                     updated.name = summary.name
                     if let km = summary.distance_km { updated.distanceKm = km }
-                    merged.append(updated)
+                    merged.append((updated, summary.position, li))
                 } else {
                     // Server-only stub — fetch full payload now so the
                     // user can use it immediately. Bandwidth cost is
                     // bounded (a few hundred KB per itinerary).
                     do {
                         let full = try await api.fetchItinerary(id: summary.id)
-                        merged.append(full)
+                        merged.append((full, summary.position, li))
                     } catch {
                         logger.warning("Failed to fetch full payload for \(summary.id, privacy: .public)")
                     }
                 }
             }
-            items = merged
+            // Explicit server position first (authoritative, cross-device),
+            // then unpositioned rows keep their local drag order.
+            merged.sort { a, b in
+                let pa = a.pos ?? Int.max
+                let pb = b.pos ?? Int.max
+                if pa != pb { return pa < pb }
+                return a.li < b.li
+            }
+            items = merged.map { $0.it }
             persist(user: user)
             lastError = nil
         } catch {

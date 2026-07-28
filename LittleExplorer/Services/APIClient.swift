@@ -192,6 +192,7 @@ actor APIClient {
         let name: String
         let distance_km: Double?
         let created_at: String
+        let position: Int?          // manual library order; nil for never-reordered rows
         let waypoint_count: Int
     }
 
