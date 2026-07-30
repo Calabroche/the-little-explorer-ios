@@ -59,6 +59,22 @@ struct SocialFeedView: View {
     @State private var showWhatsNew = false
     @State private var path = NavigationPath()
     @State private var myImage: String?
+    /// True while a tapped ride's full record is being fetched, BEFORE the
+    /// detail view is pushed. Drives an immediate loading overlay so a tap
+    /// gives instant feedback instead of a silent pause that feels broken.
+    @State private var opening = false
+
+    /// Tap → show the loader now, fetch the full record, then push. The detail
+    /// view's own loader takes over on push, so it reads as one continuous
+    /// animation from the moment of the tap.
+    private func openActivity(_ id: Int, isMine: Bool) {
+        opening = true
+        Task {
+            let r = try? await APIClient.shared.activity(id: id)
+            if let r { path.append(NavActivity(record: r, canDelete: isMine)) }
+            opening = false
+        }
+    }
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -72,7 +88,7 @@ struct SocialFeedView: View {
                         ForEach(items) { item in
                             SocialCardView(item: item,
                                            onOpenProfile: { path.append(NavProfile(id: $0)) },
-                                           onOpenActivity: { id in Task { if let r = try? await APIClient.shared.activity(id: id) { path.append(NavActivity(record: r, canDelete: item.isMine)) } } })
+                                           onOpenActivity: { id in openActivity(id, isMine: item.isMine) })
                         }
                     }
                 }
@@ -111,6 +127,14 @@ struct SocialFeedView: View {
             .task { await load(initial: true) }
             .refreshable { await load(initial: false) }
         }
+        // Instant feedback the moment a ride is tapped, while its record loads.
+        .overlay {
+            if opening {
+                LogoLoadingView(caption: "Ouverture de la sortie…")
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: opening)
     }
 
     private var emptyState: some View {
@@ -158,6 +182,18 @@ struct PublicProfileView: View {
 
     @State private var profile: SocialProfile?
     @State private var loading = true
+    /// Same instant-feedback loader as the feed: shown while a tapped ride's
+    /// full record is fetched, before the detail view is pushed.
+    @State private var opening = false
+
+    private func openActivity(_ id: Int, isMine: Bool) {
+        opening = true
+        Task {
+            let r = try? await APIClient.shared.activity(id: id)
+            if let r { path.append(NavActivity(record: r, canDelete: isMine)) }
+            opening = false
+        }
+    }
 
     var body: some View {
         ScrollView {
@@ -176,7 +212,7 @@ struct PublicProfileView: View {
                     ForEach(p.activities) { item in
                         SocialCardView(item: item,
                                        onOpenProfile: { path.append(NavProfile(id: $0)) },
-                                       onOpenActivity: { id in Task { if let r = try? await APIClient.shared.activity(id: id) { path.append(NavActivity(record: r, canDelete: item.isMine)) } } })
+                                       onOpenActivity: { id in openActivity(id, isMine: item.isMine) })
                     }
                 } else if loading {
                     ProgressView().frame(maxWidth: .infinity).padding(.top, 40)
@@ -191,6 +227,13 @@ struct PublicProfileView: View {
         .navigationBarTitleDisplayMode(.inline)
         // Navigation destinations are declared once on the root stack.
         .task { await load() }
+        .overlay {
+            if opening {
+                LogoLoadingView(caption: "Ouverture de la sortie…")
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeOut(duration: 0.2), value: opening)
     }
 
     private func header(_ p: SocialProfile) -> some View {
