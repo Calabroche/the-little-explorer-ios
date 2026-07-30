@@ -73,6 +73,9 @@ struct ActivityDetailView: View {
     @State private var showDeleteConfirm: Bool = false
     @State private var showEdit: Bool = false
     @State private var mediaPins: [ActivityMedia] = []
+    /// False until the heavy pipeline (charts + climbs + media) is assembled —
+    /// drives the animated logo loading screen shown while the ride opens.
+    @State private var ready: Bool = false
     /// Domain ceiling for every chart's `chartXScale`. Swift Charts
     /// crashes (FATAL: closed range with 0 width) when the domain is
     /// 0...0, and renders badly when it's 0...0.01. Floor at 0.5 km so
@@ -259,23 +262,21 @@ struct ActivityDetailView: View {
             }
         }
         .toolbarTitleDisplayMode(.inline)
-        .task {
-            // Geolocated photos to pin on the map (server rides only).
-            if !isLocalRide { mediaPins = (try? await APIClient.shared.activityMedia(activityId: activity.id)) ?? [] }
-        }
-        .alert("Supprimer cette sortie ?", isPresented: $showDeleteConfirm) {
-            Button("Annuler", role: .cancel) {}
-            Button("Supprimer", role: .destructive) {
-                performDelete()
-            }
-        } message: {
-            Text("La sortie sera retirée de The Little Explorer (un éventuel workout Apple Santé reste, supprime-le là-bas si tu veux).")
-        }
-        .onAppear {
-            // Build chartData + derive hrRange once. This is the heavy
-            // PowerStream pipeline (gradient + power model on the raw
-            // 1Hz streams), and before this cache it was re-running on
-            // every frame of a chart drag.
+        .task(id: activity.id) {
+            ready = false
+            // Media pins (server rides only) — fetched alongside the compute so
+            // the reveal waits on both.
+            async let media: [ActivityMedia] = isLocalRide
+                ? []
+                : ((try? await APIClient.shared.activityMedia(activityId: activity.id)) ?? [])
+
+            // Let the logo loader paint + pulse for a beat before the (brief)
+            // synchronous build, so the animation is actually seen even when
+            // the pipeline is fast.
+            try? await Task.sleep(nanoseconds: 450_000_000)
+
+            // Heavy PowerStream pipeline (gradient + power model on the raw 1 Hz
+            // streams) + climb detection. Runs once; the charts gate on it.
             if chartData.isEmpty {
                 chartData = PowerStream.build(from: activity)
                 cachedHrRange = computeHrRange()
@@ -289,9 +290,30 @@ struct ActivityDetailView: View {
                     timeS: activity.timeS,
                 )
             }
-            // Pre-warm the haptic engine so the first tick has zero
-            // perceptible latency.
+            mediaPins = await media
+            withAnimation(.easeOut(duration: 0.32)) { ready = true }
+        }
+        .alert("Supprimer cette sortie ?", isPresented: $showDeleteConfirm) {
+            Button("Annuler", role: .cancel) {}
+            Button("Supprimer", role: .destructive) {
+                performDelete()
+            }
+        } message: {
+            Text("La sortie sera retirée de The Little Explorer (un éventuel workout Apple Santé reste, supprime-le là-bas si tu veux).")
+        }
+        .onAppear {
+            // The heavy chartData / climb build moved into `.task` above so the
+            // animated logo loader can paint first. Here we only pre-warm the
+            // haptic engine so the first scrub tick has zero perceptible latency.
             haptics.prepare()
+        }
+        // Animated branded loading screen over the whole detail while the ride
+        // assembles. Fades out (via `ready`) once charts + climbs + media land.
+        .overlay {
+            if !ready {
+                LogoLoadingView(caption: "Chargement de la sortie…")
+                    .transition(.opacity)
+            }
         }
         .onChange(of: selectedDist) { _, newValue in
             if newValue != nil {
