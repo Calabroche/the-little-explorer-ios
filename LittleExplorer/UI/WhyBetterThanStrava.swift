@@ -6,13 +6,14 @@ struct WhyBetterThanStrava: View {
     var showTitle: Bool = true
 
     private struct Pt { let icon: String; let text: String }
-    private let pitch = "Garde Strava gratuit, branche The Little Explorer : analyse niveau Premium + planificateur type Komoot — gratuit, et sans capteur de puissance."
+    private let pitch = "Garde Strava. Branche The Little Explorer par-dessus : l'analyse d'un abonnement Premium, un planificateur qui bat Komoot, et un coach. Gratuit, et sans capteur de puissance."
     private let points: [Pt] = [
-        Pt(icon: "⚡", text: "Puissance & FTP estimées sans capteur — Strava exige un vrai capteur de puissance."),
-        Pt(icon: "💧", text: "Points de ravitaillement (eau / nourriture) le long du parcours — Strava et même Komoot ne le font pas."),
-        Pt(icon: "🛤️", text: "Types de chemins & surfaces par itinéraire (route, piste, chemin, asphalte / non-pavé)."),
-        Pt(icon: "🧠", text: "Plan d'entraînement + prochaine sortie prescrite (TSS cible, règle des 10 %) — niveau TrainingPeaks."),
-        Pt(icon: "🔧", text: "Carnet d'entretien matériel (usure des pièces) — Strava ne suit que le kilométrage brut."),
+        Pt(icon: "⚡", text: "Puissance, FTP et TSS estimés sans capteur, depuis ta vitesse et le dénivelé. Strava exige un vrai capteur de puissance."),
+        Pt(icon: "🔁", text: "Le parcours auto trace de vraies boucles, jamais d'aller-retour, avec les cols autour, les points d'eau / ravito et le type de surface. Ni Strava ni Komoot ne font le ravito."),
+        Pt(icon: "🧠", text: "Un vrai coach : plan d'entraînement et prochaine sortie prescrite (TSS cible, règle des 10 %). Niveau TrainingPeaks."),
+        Pt(icon: "⌚", text: "Toutes tes sorties, pas seulement Strava : import direct depuis Apple Santé (Watch, Garmin, Whoop…), sans plafond d'athlètes."),
+        Pt(icon: "🗺️", text: "Ta carte à toi : heatmap de tous tes tracés, bilan de l'année, comparateur de sorties."),
+        Pt(icon: "🔧", text: "Suivi du matériel : usure des pièces (chaîne, pneus, plaquettes), pas juste le kilométrage brut."),
     ]
 
     var body: some View {
