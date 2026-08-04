@@ -53,8 +53,14 @@ struct AllRoutesMapView: View {
         Map(position: $cameraPosition) {
             ForEach(activities) { activity in
                 let sport = Sport(backendType: activity.type) ?? selectedSport
-                MapPolyline(coordinates: activity.gps.map(\.clLocation))
-                    .stroke(sport.color.opacity(0.55), lineWidth: 2.5)
+                let coords = activity.gps.map(\.clLocation)
+                // Dark casing under the coloured line so the trace pops on any
+                // basemap (the 3D dark map and satellite both washed out a thin
+                // low-opacity line).
+                MapPolyline(coordinates: coords)
+                    .stroke(Color.black.opacity(0.35), lineWidth: 5.5)
+                MapPolyline(coordinates: coords)
+                    .stroke(sport.color.opacity(0.95), lineWidth: 3.5)
             }
         }
         .mapStyle(.standard(elevation: .realistic))

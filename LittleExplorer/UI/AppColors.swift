@@ -22,6 +22,9 @@ enum AppColors {
     static let green      = Color(light: "6B9A5E", dark: "8AB87B")
     static let greenLight = Color(light: "DCE9D4", dark: "2A3A24")
     static let blue       = Color(light: "4A7A9C", dark: "6B9DBF")
+    // Walking gets its own vivid hue so its traces read on any basemap
+    // (the old inkLight grey vanished on the dark 3D map).
+    static let purple     = Color(light: "8E5BB5", dark: "B689E0")
 
     // Heatmap intensity gradient (mirrors web's intensityColor()).
     static let heat0 = creamDark
