@@ -24,6 +24,7 @@ struct AdminView: View {
     @Environment(AppEnvironment.self) private var environment
 
     @State private var users: [APIClient.AdminUser] = []
+    @State private var ghosts: [APIClient.AdminGhost] = []
     @State private var loadState: LoadState = .idle
     @State private var deletingId: String?
     @State private var pendingDelete: APIClient.AdminUser?
@@ -92,6 +93,21 @@ struct AdminView: View {
                         onDelete: { pendingDelete = user },
                     )
                 }
+
+                if !ghosts.isEmpty {
+                    Text("Athlètes sans compte")
+                        .font(.system(size: 15, weight: .bold, design: .serif))
+                        .foregroundStyle(AppColors.ink)
+                        .padding(.top, 8)
+                    Text("Strava nous envoie encore leurs sorties sans qu'ils aient de compte. Donne-leur un nom, il s'affichera partout au lieu de « Anonyme ».")
+                        .font(.system(size: 12))
+                        .foregroundStyle(AppColors.inkMid)
+                    ForEach(ghosts) { ghost in
+                        GhostCard(ghost: ghost) { name in
+                            await saveGhostName(ghost.athleteId, name)
+                        }
+                    }
+                }
             }
             .padding(16)
         }
@@ -100,13 +116,29 @@ struct AdminView: View {
     private func load() async {
         loadState = .loading
         do {
-            let fetched = try await environment.api.adminUsers()
+            let fetched = try await environment.api.adminUsersAndGhosts()
             await MainActor.run {
-                users = fetched
+                users = fetched.users
+                ghosts = fetched.ghosts ?? []
                 loadState = .loaded
             }
         } catch {
             await MainActor.run { loadState = .failed(error.localizedDescription) }
+        }
+    }
+
+    private func saveGhostName(_ athleteId: String, _ name: String) async {
+        do {
+            try await environment.api.nameAthlete(athleteId: athleteId, name: name)
+            await MainActor.run {
+                let trimmed = name.trimmingCharacters(in: .whitespaces)
+                ghosts = ghosts.map { g in
+                    guard g.athleteId == athleteId else { return g }
+                    return APIClient.AdminGhost(athleteId: g.athleteId, name: trimmed.isEmpty ? nil : trimmed, events: g.events, lastSeen: g.lastSeen)
+                }
+            }
+        } catch {
+            // keep the field as typed; a reload will reflect the server truth
         }
     }
 
@@ -277,5 +309,52 @@ private struct UserCard: View {
         outFmt.locale = Locale(identifier: "fr_FR")
         outFmt.dateFormat = "dd MMM yyyy"
         return outFmt.string(from: d)
+    }
+}
+
+// MARK: - Ghost athlete card (account-less, admin can name)
+
+private struct GhostCard: View {
+    let ghost: APIClient.AdminGhost
+    let onSave: (String) async -> Void
+
+    @State private var name: String = ""
+    @State private var saving = false
+
+    private var stravaURL: URL? { URL(string: "https://www.strava.com/athletes/\(ghost.athleteId)") }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            TextField("Nom (ex. Paul)", text: $name)
+                .textFieldStyle(.roundedBorder)
+                .autocorrectionDisabled()
+                .submitLabel(.done)
+                .disabled(saving)
+                .onSubmit { commit() }
+
+            HStack(spacing: 10) {
+                if let url = stravaURL {
+                    Link("athlète \(ghost.athleteId) ↗", destination: url)
+                        .font(.system(size: 12).weight(.semibold))
+                        .foregroundStyle(AppColors.terra)
+                }
+                Text("\(ghost.events) sortie\(ghost.events > 1 ? "s" : "") ignorée\(ghost.events > 1 ? "s" : "")")
+                    .font(.system(size: 12))
+                    .foregroundStyle(AppColors.inkMid)
+                Spacer()
+                if saving { ProgressView().scaleEffect(0.7) }
+            }
+        }
+        .padding(12)
+        .background(AppColors.surface, in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).stroke(AppColors.creamBorder, lineWidth: 1))
+        .onAppear { name = ghost.name ?? "" }
+    }
+
+    private func commit() {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        if trimmed == (ghost.name ?? "") { return }
+        saving = true
+        Task { await onSave(trimmed); await MainActor.run { saving = false } }
     }
 }

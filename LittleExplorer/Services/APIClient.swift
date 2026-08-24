@@ -447,11 +447,47 @@ actor APIClient {
         }
     }
 
-    struct AdminUsersResponse: Decodable, Sendable { let users: [AdminUser] }
+    /// Athlete Strava keeps sending activities for, but with no account here.
+    /// `name` is a label an admin assigned (nil = still unnamed / "Anonyme").
+    struct AdminGhost: Decodable, Sendable, Identifiable {
+        let athleteId: String
+        let name: String?
+        let events: Int
+        let lastSeen: String?
+        var id: String { athleteId }
+    }
+
+    struct AdminUsersResponse: Decodable, Sendable {
+        let users: [AdminUser]
+        let ghosts: [AdminGhost]?
+    }
 
     func adminUsers() async throws -> [AdminUser] {
         let response: AdminUsersResponse = try await get("/api/admin/users")
         return response.users
+    }
+
+    /// Full admin payload: real users + account-less "ghost" athletes.
+    func adminUsersAndGhosts() async throws -> AdminUsersResponse {
+        try await get("/api/admin/users")
+    }
+
+    /// Name (or clear) an account-less athlete → shows as that name instead of
+    /// "Anonyme" in the admin list + event log. Empty name removes the label.
+    func nameAthlete(athleteId: String, name: String) async throws {
+        let url = baseURL.appendingPathComponent("/api/admin/users")
+        var request = URLRequest(url: url)
+        request.httpMethod = "PATCH"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        if let token = authToken { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        request.httpBody = try JSONSerialization.data(withJSONObject: ["athleteId": athleteId, "name": name])
+        let (data, response) = try await session.data(for: request)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            if http.statusCode == 401 { throw APIError.unauthorized }
+            let preview = String(data: data.prefix(200), encoding: .utf8) ?? ""
+            Log.api.error("PATCH /api/admin/users \(http.statusCode) · \(preview, privacy: .public)")
+            throw APIError.http(http.statusCode)
+        }
     }
 
     /// Hard-delete a user (cascades to all their data). Mirrors the web
