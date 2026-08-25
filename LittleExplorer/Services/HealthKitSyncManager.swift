@@ -36,6 +36,10 @@ final class HealthKitSyncManager {
     /// Mirror of AppEnvironment.hasSeenWelcome — an existing install that's
     /// already past onboarding is treated as primed so its sync never stalls.
     private let seenWelcomeKey  = "tle.hasSeenWelcome"
+    /// One-shot: an earlier server bug wiped some workouts' routes. Bumping
+    /// this key forces a single full re-sweep on next launch so their maps are
+    /// re-read from Apple Health and restored. Bump the suffix to trigger again.
+    private let recoveryKey     = "tle.healthkit.didRouteRecovery_v1"
 
     init(health: HealthKitService, api: APIClient) {
         self.health = health
@@ -95,6 +99,19 @@ final class HealthKitSyncManager {
         }
 
         guard await ensureAuthorized() else { return }
+
+        // One-time route recovery: an earlier bug let an empty re-ingest wipe a
+        // workout's stored route. Clear the dedup set + full-sweep flag ONCE so
+        // the sweep below re-reads the whole back-catalogue and re-uploads every
+        // workout with its HKWorkoutRoute (the server now keeps existing routes,
+        // so good data sticks). Runs at most once per install.
+        if !defaults.bool(forKey: recoveryKey) {
+            defaults.set(true, forKey: recoveryKey)
+            defaults.removeObject(forKey: uploadedKey)
+            defaults.set(false, forKey: didFullSweepKey)
+            Log.api.notice("HealthKit: running one-time route recovery sweep")
+        }
+
         await syncNew()
         startObservingIfNeeded()
     }
