@@ -63,6 +63,21 @@ final class HealthKitSyncManager {
         Task { await self.syncNew() }
     }
 
+    /// Force a full re-import from Apple Health: clear the dedup set + the
+    /// "did full sweep" flag, then sweep the whole back-catalogue again. Used
+    /// to recover workouts whose route was lost server-side — re-ingesting
+    /// them with their HKWorkoutRoute restores the map (the server now keeps
+    /// existing routes, so a good re-ingest sticks). Returns the number of
+    /// workouts (re)uploaded.
+    func forceFullResync() async {
+        let defaults = UserDefaults.standard
+        defaults.removeObject(forKey: uploadedKey)
+        defaults.set(false, forKey: didFullSweepKey)
+        defaults.set(true, forKey: primedKey)
+        guard isEnabled(), await ensureAuthorized() else { return }
+        await syncNew()
+    }
+
     private func bootstrap() async {
         guard isEnabled() else { return }
 

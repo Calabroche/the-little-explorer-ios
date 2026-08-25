@@ -24,6 +24,8 @@ struct SettingsView: View {
     // granular control over the Strava link.
     @State private var isExporting: Bool = false
     @State private var isDisconnectingStrava: Bool = false
+    @State private var reimporting: Bool = false
+    @State private var reimportDone: Bool = false
     @State private var dataActionError: String?
     @State private var exportSheetItem: ExportSheetItem?
 
@@ -151,6 +153,29 @@ struct SettingsView: View {
                             }
                         }
                     }
+
+                    // Force a full re-import — recovers workouts whose map/route
+                    // was lost by re-reading them from Apple Health.
+                    Button {
+                        reimporting = true
+                        Task {
+                            await env.healthKitSync.forceFullResync()
+                            await MainActor.run { reimporting = false; reimportDone = true }
+                        }
+                    } label: {
+                        HStack {
+                            if reimporting { ProgressView().scaleEffect(0.8) }
+                            Text(reimporting ? "Ré-import en cours…" : "Ré-importer tout depuis Apple Santé")
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                            if reimportDone && !reimporting {
+                                Image(systemName: "checkmark.circle.fill").foregroundStyle(AppColors.green)
+                            }
+                        }
+                    }
+                    .disabled(reimporting || !env.healthKitEnabled)
+                    Text("Re-lit toutes tes séances Apple Santé et récupère les tracés/cartes manquants. À faire si des sorties s'affichent sans carte.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
                 }
             }
 
